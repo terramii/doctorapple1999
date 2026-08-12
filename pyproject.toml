@@ -1,0 +1,17 @@
+[project]
+name = "doctor-apple-vercel"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "httpx>=0.28,<1.0",
+    "pymongo>=4.11,<5.0",
+    "python-docx>=1.1.2,<2.0.0",
+    "python-dotenv>=1.0,<2.0",
+    "python-multipart>=0.0.20,<1.0",
+    "python-pptx>=1.0.2,<2.0.0",
+    "email-validator>=2.2.0,<3.0.0",
+]
+
+[tool.vercel]
+entrypoint = "server:app"
