@@ -243,6 +243,8 @@
     background: rgba(255,255,255,0.4); cursor: pointer; transition: all .2s ease; margin-bottom: 16px;
   }
   .upload-zone:hover { border-color: var(--sage-mid); background: rgba(255,255,255,0.6); }
+  .upload-zone:focus-visible { outline: 3px solid rgba(90,120,101,0.25); border-color: var(--sage-mid); }
+  .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   
   .samples-label { font-size: 0.88rem; font-weight: 600; color: var(--sage-dark); margin: 18px 0 10px; text-align: left; }
   .samples-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -350,6 +352,38 @@
     flex: 1; min-width: 210px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 14px; padding: 20px;
     backdrop-filter: blur(16px);
   }
+
+  @media (max-width: 760px) {
+    body { font-size: 16px; }
+    .topbar { height: auto; min-height: 62px; padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+    .topbar .user-info { width: 100%; justify-content: space-between; }
+    .workspace { height: auto; min-height: calc(100vh - 62px); padding: 10px; display: block; }
+    .sidebar { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 14px; }
+    .sidebar-header, .sidebar > div:last-child { display: none; }
+    .sidebar-menu { flex-direction: row; overflow-x: auto; gap: 8px; scrollbar-width: thin; padding-bottom: 3px; }
+    .menu-item { min-width: max-content; min-height: 44px; padding: 10px 14px; text-align: center; }
+    .main-content { padding: 12px 4px 28px; overflow: visible; }
+    .main-content h1 { font-size: clamp(1.65rem, 8vw, 2.15rem); line-height: 1.15; }
+    .login-screen { padding: 14px; align-items: flex-start; overflow-y: auto; }
+    .login-card { width: 100%; padding: 22px 16px; margin: 8px 0; }
+    .role-btn { min-height: 64px; }
+    .columns, .flow-row { flex-direction: column; }
+    .col-main, .col-side { width: 100%; }
+    .field-grid { grid-template-columns: 1fr; gap: 4px; }
+    .glass-card { padding: 18px 14px; border-radius: 14px; overflow-x: auto; }
+    .step-bar { overflow-x: auto; justify-content: flex-start; padding: 4px 0 12px; }
+    .step-item { min-width: 88px; font-size: 0.72rem; }
+    .step-progress { display: none; }
+    .samples-row { display: grid; grid-template-columns: 1fr; }
+    .sample-badge, .btn { min-height: 44px; width: 100%; }
+    .upload-zone { padding: 28px 14px; min-height: 150px; display: flex; flex-direction: column; justify-content: center; }
+    input, select, textarea { min-height: 44px; font-size: 16px !important; }
+    table { min-width: 620px; }
+    .control-panel > * { width: 100%; max-width: none !important; }
+    .modal-overlay { align-items: flex-end; }
+    .modal-card { width: 100%; max-width: none; max-height: 90vh; overflow-y: auto; padding: 22px 16px; border-radius: 18px 18px 0 0; }
+    .modal-footer { flex-direction: column-reverse; }
+  }
   .metric-label { font-size: 0.85rem; color: var(--sage-mid); margin-bottom: 8px; font-weight: 500; }
   .metric-value { font-size: 1.7rem; font-weight: 600; color: var(--sage-dark); }
 
@@ -404,11 +438,6 @@
     </div>
     <p style="text-align:center; color: var(--sage-mid); margin-top: -10px; margin-bottom: 24px; font-weight: 500;">Clinical Intake & Claims Automation Suite</p>
     
-    <div class="auth-tabs" aria-label="Authentication mode">
-      <button class="auth-tab active" data-auth-mode="login">Log in</button>
-      <button class="auth-tab" data-auth-mode="signup">Sign up</button>
-    </div>
-
     <div class="role-select-box" aria-label="Choose account role">
       <button class="role-btn active" data-role="patient">
         <div class="role-title">Patient Pre-Registration Portal</div>
@@ -428,7 +457,8 @@
       <label class="field-label" for="authEmail">Email address</label>
       <input type="email" id="authEmail" autocomplete="email" placeholder="name@example.com">
       <label class="field-label" for="authPassword">Password</label>
-      <input type="password" id="authPassword" autocomplete="current-password" minlength="10" placeholder="At least 10 characters">
+      <input type="password" id="authPassword" autocomplete="current-password" minlength="8" placeholder="Enter the role password">
+      <div id="rolePasswordHint" style="font-size:0.82rem; color:var(--sage-mid); margin-top:6px;">Patient account password: PatientApple</div>
     </div>
     <div id="authMessage" class="auth-message" role="status" aria-live="polite"></div>
     <button class="btn" id="loginBtn" style="width:100%; padding:14px; border-radius:30px;">Log in to Patient Portal</button>
@@ -500,6 +530,14 @@
                   </label>
                 </div>
               </div>
+              <div class="q-block" style="margin-bottom:15px;">
+                <label class="field-label" for="screeningType">Questionnaire / Screening Type</label>
+                <select id="screeningType">
+                  <option value="general">General Health — routine check-up or health screening</option>
+                  <option value="occupational">Occupational Health — employment or workplace medical screening</option>
+                </select>
+                <div style="font-size:0.82rem; color:var(--sage-mid); margin-top:6px;">If an employer or referral requires Occupational Health, select that option. Clinic staff will verify it.</div>
+              </div>
               <div id="step1Error" class="alert-danger hidden" style="margin-top:15px; margin-bottom:0;"></div>
               <div id="prebookScheduler" class="q-block">
                 <div class="field-grid">
@@ -534,19 +572,14 @@
             <!-- Wizard Step 2 -->
             <div class="glass-card wizard-step hidden" id="step2Content">
               <div class="glass-card-header">Step 2: Policy Verification / Referral Chit</div>
-              <p>Simulate uploading your corporate referral letter or insurance voucher using a sample document:</p>
-              <div class="samples-row">
-                <div class="sample-badge" data-chit="meridian">Meridian Life (Loh Wei Ming - MRDEB)</div>
-                <div class="sample-badge" data-chit="bluepeak">Bluepeak Wellness (Loh Amir - BLPHS)</div>
-                <div class="sample-badge" data-chit="learning">Ministry of Learning (Kumar Sheng Yang - MOL0199VME)</div>
-                <div class="sample-badge" data-chit="northstar">Northstar Underwriting (Wong Siti - NSTNBU)</div>
-                <div class="sample-badge" data-chit="everwell">Everwell Voucher (Devi Hui Min - EVWME)</div>
-              </div>
-              <div class="upload-zone" id="uploadZone">
+              <p>Select an insurance/referral associated with your account, or continue without making an insurance claim:</p>
+              <div class="samples-row" id="patientCoverageOptions"></div>
+              <div class="upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="Choose a referral or insurance document from this device">
                 <div class="icon">📂</div>
-                <div style="font-weight:600; margin-top:8px;">Upload PDF/Photo of Medical Referral Chit or Insurance Voucher</div>
-                <div class="hint" style="font-size:0.8rem; color:#777; margin-top:4px;">Simulated by clicking the sample badges above</div>
+                <div style="font-weight:600; margin-top:8px;">Choose PDF or photo from this device</div>
+                <div class="hint" style="font-size:0.8rem; color:#777; margin-top:4px;">On mobile, choose the camera, photo library, or Files. The document must match the signed-in patient.</div>
               </div>
+              <input type="file" id="referralFileInput" accept="image/*,.txt,.docx,.pptx" hidden>
               <div id="scanningState" class="spinner-box hidden">
                 <div class="spinner"></div>
                 <span>OCR scanning engine reading Policy parameters...</span>
@@ -589,6 +622,7 @@
                   <tr style="height:28px;"><td><b>Patient Name:</b></td><td id="revName"></td></tr>
                   <tr style="height:28px;"><td><b>NRIC/FIN:</b></td><td id="revNric"></td></tr>
                   <tr style="height:28px;"><td><b>Appointment:</b></td><td id="revAppt"></td></tr>
+                  <tr style="height:28px;"><td><b>Screening Type:</b></td><td id="revScreeningType"></td></tr>
                   <tr style="height:28px;"><td><b>Sponsor Scheme:</b></td><td id="revScheme"></td></tr>
                   <tr style="height:28px;"><td><b>Medication History:</b></td><td id="revMeds">None Declared</td></tr>
                   <tr style="height:28px;"><td><b>Allergy Flags:</b></td><td id="revAllergy" style="font-weight:bold;">None</td></tr>
@@ -597,7 +631,7 @@
               <div class="q-block">
                 <span class="field-label">Draw Signature below:</span>
                 <div style="border:1px solid rgba(59, 82, 68, 0.15); border-radius:10px; height:80px; background:#fafafa; display:flex; align-items:center; justify-content:center; color:#777; font-style:italic; font-size:0.95rem; user-select:none;">
-                  ✗ Loh Wei Ming (Digitally Signed)
+                  <span id="digitalSignature">Signature pending patient match</span>
                 </div>
               </div>
             </div>
@@ -643,12 +677,12 @@
           <div class="glass-card-header">Access Credentials</div>
           <div class="field-grid">
             <div>
-              <label class="field-label">Associated Username</label>
-              <input type="text" value="loh_wei_ming_80" readonly>
+              <label class="field-label">Account Email</label>
+              <input type="email" id="accountEmail" value="" readonly>
             </div>
             <div>
               <label class="field-label">Portal Access Role</label>
-              <input type="text" value="Insured Patient" readonly>
+              <input type="text" id="accountRole" value="" readonly>
             </div>
           </div>
           <div style="margin-top:20px;">
@@ -667,19 +701,19 @@
           <div class="field-grid">
             <div>
               <label class="field-label">Full Name (as per NRIC/Passport)</label>
-              <input type="text" value="Loh Wei Ming">
+              <input type="text" id="profileName" value="" readonly>
               <label class="field-label">NRIC/Passport Number</label>
-              <input type="text" value="S8010946C" readonly>
+              <input type="text" id="profileIdentifier" value="" readonly>
               <label class="field-label">Contact Phone Number</label>
-              <input type="text" value="98321045">
+              <input type="text" id="profilePhone" value="">
             </div>
             <div>
               <label class="field-label">Date of Birth</label>
-              <input type="text" value="25/01/1980" readonly>
+              <input type="text" id="profileDob" value="" readonly>
               <label class="field-label">Email Address</label>
-              <input type="email" value="wei_ming.loh@gmail.com">
+              <input type="email" id="profileEmail" value="" readonly>
               <label class="field-label">Residential Address</label>
-              <input type="text" value="Blk 23 Marina Boulevard #12-04">
+              <input type="text" id="profileAddress" value="">
             </div>
           </div>
           <div style="margin-top:20px;">
@@ -704,22 +738,7 @@
                 <th>Adjudication Type</th>
               </tr>
             </thead>
-            <tbody>
-              <tr style="border-bottom:1px solid rgba(59,82,68,0.15);">
-                <td>Meridian Life Assurance</td>
-                <td>MRDEB</td>
-                <td>Ministry of Education</td>
-                <td style="color:var(--success-text); font-weight:bold;">Fully Covered</td>
-                <td>Automated AI Adjudication</td>
-              </tr>
-              <tr style="border-bottom:1px solid rgba(59,82,68,0.15);">
-                <td>Bluepeak Prosperity</td>
-                <td>WELL2</td>
-                <td>Corporate Benefit Tier B</td>
-                <td>$500.00 / $500.00 remaining</td>
-                <td>Automated Real-Time</td>
-              </tr>
-            </tbody>
+            <tbody id="patientPolicyBody"></tbody>
           </table>
           <div style="margin-top:24px; border-top:1px dashed rgba(59, 82, 68, 0.2); padding-top:18px;">
             <label class="field-label">Add / Change Insurer Policy Card</label>
@@ -1125,10 +1144,12 @@ let policyDb = [
 
 // --- APP STATE ---
 let selectedRole = "patient";
+let authenticatedPatient = null;
 let currentPanelId = "";
 let wizardStep = 1;
 let patientInputData = {
   visitType: "prebooked",
+  screeningType: "general",
   date: new Date().toISOString().split('T')[0],
   time: "10:00 AM",
   prefill: null
@@ -1199,8 +1220,8 @@ function renderSidebar() {
 }
 
 // --- API-BACKED AUTHENTICATION & LOGIN ROUTING ---
-let authMode = "login";
-let accessToken = sessionStorage.getItem("doctorAppleToken") || "";
+// Keep authentication in memory so opening or refreshing the page always requires sign-in.
+let accessToken = "";
 const roleLabels = {
   patient: "Patient Portal",
   staff: "Clinic Staff Dashboard",
@@ -1208,20 +1229,10 @@ const roleLabels = {
 };
 
 function updateAuthButton() {
-  const action = authMode === "login" ? "Log in" : "Sign up";
-  document.getElementById('loginBtn').textContent = `${action} to ${roleLabels[selectedRole]}`;
-  document.getElementById('authPassword').autocomplete = authMode === "login" ? "current-password" : "new-password";
+  document.getElementById('loginBtn').textContent = `Log in to ${roleLabels[selectedRole]}`;
+  const passwords = {patient: "PatientApple", staff: "StaffApple", tpa: "TPAApple"};
+  document.getElementById('rolePasswordHint').textContent = `${roleLabels[selectedRole]} account password: ${passwords[selectedRole]}`;
 }
-
-document.querySelectorAll('.auth-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.auth-tab').forEach(item => item.classList.remove('active'));
-    tab.classList.add('active');
-    authMode = tab.dataset.authMode;
-    document.getElementById('authMessage').textContent = '';
-    updateAuthButton();
-  });
-});
 
 const loginRoleBtns = document.querySelectorAll('.role-btn');
 loginRoleBtns.forEach(btn => {
@@ -1233,12 +1244,95 @@ loginRoleBtns.forEach(btn => {
   });
 });
 
-function openSelectedPortal() {
+function openSelectedPortal(email) {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appLayout').classList.remove('hidden');
   document.getElementById('roleBadge').textContent = roleLabels[selectedRole];
   document.getElementById('sidebarTitle').textContent = roleLabels[selectedRole] + " Navigation";
+  document.getElementById('accountEmail').value = email;
+  document.getElementById('accountRole').value = roleLabels[selectedRole];
+  if (selectedRole === 'patient') loadAuthenticatedPatient(email);
   renderSidebar();
+}
+
+function loadAuthenticatedPatient(email) {
+  const questionnaireRecord = [...MOCK_SURVEYS_GENERAL, ...MOCK_SURVEYS_OCCUPATIONAL].find(response =>
+    String(response['Email Address'] || '').toLowerCase() === email.toLowerCase()
+  );
+  authenticatedPatient = PATIENT_DB.find(patient =>
+    String(patient['Email'] || '').toLowerCase() === email.toLowerCase()
+  ) || (questionnaireRecord && PATIENT_DB.find(patient =>
+    String(patient['NRIC/FIN/Passport Number'] || '').toUpperCase() === String(questionnaireRecord['ID Number'] || '').toUpperCase()
+  )) || (questionnaireRecord && {
+    'Full Name': questionnaireRecord['Name'],
+    'NRIC/FIN/Passport Number': questionnaireRecord['ID Number'],
+    'Sex': questionnaireRecord['Gender'],
+    'Date of Birth (DD/MM/YY)': questionnaireRecord['Date of Birth'],
+    'Address': questionnaireRecord['Address'] || '',
+    'Postal Code': questionnaireRecord['Postal Code'] || '',
+    'Contact - Mobile': questionnaireRecord['Phone Number'] || '',
+    'Email': questionnaireRecord['Email Address'],
+    'Drug Allergy': questionnaireRecord['Drug Allergy Details'] || 'None'
+  }) || null;
+  if (!authenticatedPatient) return;
+  const identifier = String(authenticatedPatient['NRIC/FIN/Passport Number'] || '').toUpperCase();
+  authenticatedPatient.questionnaires = {
+    general: MOCK_SURVEYS_GENERAL.find(response => String(response['ID Number'] || '').toUpperCase() === identifier) || null,
+    occupational: MOCK_SURVEYS_OCCUPATIONAL.find(response => String(response['ID Number'] || '').toUpperCase() === identifier) || null
+  };
+  authenticatedPatient.questionnaireDiscrepancies = Object.entries(authenticatedPatient.questionnaires)
+    .filter(([, response]) => response && String(response['Email Address'] || '').toLowerCase() !== email.toLowerCase())
+    .map(([type]) => `${type} questionnaire email differs from registration email`);
+  document.getElementById('profileName').value = authenticatedPatient['Full Name'] || '';
+  document.getElementById('profileIdentifier').value = authenticatedPatient['NRIC/FIN/Passport Number'] || '';
+  document.getElementById('profilePhone').value = authenticatedPatient['Contact - Mobile'] || authenticatedPatient['Contact - Home'] || '';
+  document.getElementById('profileDob').value = authenticatedPatient['Date of Birth (DD/MM/YY)'] || '';
+  document.getElementById('profileEmail').value = email;
+  document.getElementById('profileAddress').value = authenticatedPatient['Address'] || '';
+  document.getElementById('digitalSignature').textContent = `✗ ${authenticatedPatient['Full Name']} (Digitally Signed)`;
+  renderCoverageOptions();
+  renderPatientPolicy();
+}
+
+function patientFromDatabase() {
+  return {
+    name: authenticatedPatient['Full Name'],
+    nric: authenticatedPatient['NRIC/FIN/Passport Number'],
+    dob: authenticatedPatient['Date of Birth (DD/MM/YY)'],
+    gender: authenticatedPatient['Sex'],
+    allergy: authenticatedPatient['Drug Allergy'] || 'None',
+    phone: authenticatedPatient['Contact - Mobile'] || authenticatedPatient['Contact - Home'] || '',
+    address: authenticatedPatient['Address'] || '',
+    postal: authenticatedPatient['Postal Code'] || '',
+    email: authenticatedPatient['Email'],
+    visitType: 'general'
+  };
+}
+
+function renderCoverageOptions() {
+  const container = document.getElementById('patientCoverageOptions');
+  const matchingReferrals = Object.entries(mockPatients).filter(([, patient]) =>
+    patient.email.toLowerCase() === authenticatedPatient['Email'].toLowerCase()
+  );
+  container.innerHTML = matchingReferrals.map(([key, patient]) =>
+    `<button type="button" class="sample-badge" data-chit="${key}">${patient.insurer} — ${patient.insurerCode}</button>`
+  ).join('') + '<button type="button" class="sample-badge" data-self-pay="true">Self-pay (no insurance claim)</button>';
+  container.querySelectorAll('.sample-badge').forEach(button => {
+    button.addEventListener('click', () => selectCoverageOption(button));
+  });
+}
+
+function renderPatientPolicy() {
+  const body = document.getElementById('patientPolicyBody');
+  const policy = patientInputData.prefill;
+  if (!policy || policy.insurerCode === 'SELF_PAY' || !authenticatedPatient || policy.email.toLowerCase() !== authenticatedPatient['Email'].toLowerCase()) {
+    body.innerHTML = '<tr><td colspan="5" style="padding:18px 0; color:var(--sage-mid);">No verified policy is linked to this account yet. Verify a matching referral chit during booking.</td></tr>';
+    return;
+  }
+  body.innerHTML = `<tr style="border-bottom:1px solid rgba(59,82,68,0.15);">
+    <td>${policy.insurer}</td><td>${policy.insurerCode}</td><td>Verified referral / voucher</td>
+    <td style="color:var(--success-text); font-weight:bold;">Package matched</td><td>Pending clinic verification</td>
+  </tr>`;
 }
 
 document.getElementById('loginBtn').addEventListener('click', async () => {
@@ -1247,24 +1341,13 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
   message.className = 'auth-message';
-  if (!email || password.length < 10) {
-    message.textContent = 'Enter a valid email and a password of at least 10 characters.';
+  if (!email || password.length < 8) {
+    message.textContent = 'Enter a valid email and the password for the selected role.';
     message.classList.add('error');
     return;
   }
   button.disabled = true;
   try {
-    if (authMode === 'signup') {
-      const signupResponse = await fetch('/doctor-apple/auth/register', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email, password, role: selectedRole})
-      });
-      const signupBody = await signupResponse.json();
-      if (!signupResponse.ok) throw new Error(signupBody.detail || 'Unable to create account');
-      message.textContent = `${roleLabels[selectedRole]} account created. Logging you in…`;
-      message.classList.add('success');
-    }
     const loginResponse = await fetch('/doctor-apple/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1273,10 +1356,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     const loginBody = await loginResponse.json();
     if (!loginResponse.ok) throw new Error(loginBody.detail || 'Unable to log in');
     accessToken = loginBody.access_token;
-    sessionStorage.setItem('doctorAppleToken', accessToken);
-    sessionStorage.setItem('doctorAppleRole', selectedRole);
-    sessionStorage.setItem('doctorAppleEmail', email);
-    openSelectedPortal();
+    openSelectedPortal(email);
   } catch (error) {
     message.textContent = error.message;
     message.classList.add('error');
@@ -1288,9 +1368,9 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
   accessToken = '';
-  sessionStorage.removeItem('doctorAppleToken');
-  sessionStorage.removeItem('doctorAppleRole');
-  sessionStorage.removeItem('doctorAppleEmail');
+  document.getElementById('authEmail').value = '';
+  document.getElementById('authPassword').value = '';
+  document.getElementById('authMessage').textContent = '';
   document.getElementById('appLayout').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
 });
@@ -1327,6 +1407,7 @@ document.getElementById('nextBtn').addEventListener('click', () => {
   if (wizardStep === 1) {
     const visitTypeRadio = document.querySelector('input[name="visitTypeRadio"]:checked');
     patientInputData.visitType = visitTypeRadio.closest('.radio-option').dataset.visit;
+    patientInputData.screeningType = document.getElementById('screeningType').value;
     patientInputData.date = document.getElementById('apptDate').value || new Date().toISOString().split('T')[0];
     patientInputData.time = document.getElementById('apptTime').value;
     
@@ -1411,11 +1492,32 @@ document.querySelectorAll('input[name="visitTypeRadio"]').forEach(radio => {
   });
 });
 
-document.querySelectorAll('.sample-badge').forEach(badge => {
-  badge.addEventListener('click', () => {
+function selectCoverageOption(badge) {
+    if (badge.dataset.selfPay === 'true') {
+      patientInputData.prefill = {
+        ...patientFromDatabase(), insurer: 'Self-pay', insurerCode: 'SELF_PAY',
+        packageCode: 'SELF_PAY', packageName: 'Standard clinic services', covered: []
+      };
+      document.getElementById('scanFeedback').textContent = 'Self-pay selected. No insurance claim will be submitted.';
+      document.getElementById('scanFeedback').classList.remove('hidden');
+      document.getElementById('pName').value = patientInputData.prefill.name;
+      document.getElementById('pNric').value = patientInputData.prefill.nric;
+      document.getElementById('pInsurer').value = 'Self-pay (no insurance claim)';
+      document.getElementById('pPackage').value = 'Standard clinic services';
+      document.getElementById('sideInsurer').textContent = 'Self-pay';
+      document.getElementById('sideAllergy').textContent = patientInputData.prefill.allergy;
+      buildSurveyInputs(patientInputData.prefill);
+      renderPatientPolicy();
+      return;
+    }
     const key = badge.dataset.chit;
     const pat = mockPatients[key];
+    if (!authenticatedPatient || pat.email.toLowerCase() !== authenticatedPatient['Email'].toLowerCase()) {
+      alert('This referral belongs to a different patient account. Sign in with the matching patient email.');
+      return;
+    }
     patientInputData.prefill = pat;
+    renderPatientPolicy();
     
     document.getElementById('scanningState').classList.remove('hidden');
     document.getElementById('scanFeedback').classList.add('hidden');
@@ -1436,22 +1538,120 @@ document.querySelectorAll('.sample-badge').forEach(badge => {
       
       buildSurveyInputs(pat);
     }, 1000);
-  });
+}
+
+const uploadZone = document.getElementById('uploadZone');
+const referralFileInput = document.getElementById('referralFileInput');
+uploadZone.addEventListener('click', () => referralFileInput.click());
+uploadZone.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    referralFileInput.click();
+  }
+});
+referralFileInput.addEventListener('change', async () => {
+  const file = referralFileInput.files[0];
+  if (!file) return;
+  const feedback = document.getElementById('scanFeedback');
+  const allowed = file.type.startsWith('image/') || /\.(txt|docx|pptx)$/i.test(file.name);
+  if (!allowed || file.size > 8 * 1024 * 1024) {
+    feedback.textContent = 'Choose a photo, TXT, DOCX, or PPTX file no larger than 8 MB.';
+    feedback.className = 'alert-danger';
+    return;
+  }
+  document.getElementById('scanningState').classList.remove('hidden');
+  feedback.classList.add('hidden');
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetch('/doctor-apple/documents/extract', {
+      method: 'POST', headers: {Authorization: `Bearer ${accessToken}`}, body: form
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || 'Unable to process this document');
+    const matchingReferral = Object.values(mockPatients).find(patient =>
+      patient.email.toLowerCase() === authenticatedPatient['Email'].toLowerCase() &&
+      patient.insurerCode === result.insurer_code
+    );
+    if (!matchingReferral || result.requires_manual_review) {
+      patientInputData.prefill = null;
+      feedback.textContent = `Document received (${file.name}), but it could not be safely matched to this patient. Clinic staff review is required.`;
+      feedback.className = 'alert-danger';
+      return;
+    }
+    patientInputData.prefill = matchingReferral;
+    document.getElementById('pName').value = matchingReferral.name;
+    document.getElementById('pNric').value = matchingReferral.nric;
+    document.getElementById('pInsurer').value = matchingReferral.insurer;
+    document.getElementById('pPackage').value = matchingReferral.packageName;
+    document.getElementById('sideInsurer').textContent = `${matchingReferral.insurerCode} (document verified)`;
+    document.getElementById('sideAllergy').textContent = matchingReferral.allergy;
+    buildSurveyInputs(matchingReferral);
+    renderPatientPolicy();
+    feedback.textContent = `Document verified: ${matchingReferral.insurer} is associated with this patient.`;
+    feedback.className = 'alert-success';
+  } catch (error) {
+    feedback.textContent = error.message;
+    feedback.className = 'alert-danger';
+  } finally {
+    document.getElementById('scanningState').classList.add('hidden');
+    feedback.classList.remove('hidden');
+    referralFileInput.value = '';
+  }
 });
 
 function buildSurveyInputs(pat) {
   const box = document.getElementById('surveyInputs');
-  let html = `
-    <div class="q-block">
-      <label class="field-label">Pre-filled Email Address</label>
-      <input type="text" id="sEmail" value="${pat.email}">
-      <label class="field-label">Pre-filled Contact Number</label>
-      <input type="text" id="sPhone" value="${pat.phone}">
-      <label class="field-label">Pre-filled Residential Address</label>
-      <input type="text" id="sAddress" value="${pat.address}">
-    </div>
-  `;
-  
+  const formType = patientInputData.screeningType;
+  const saved = authenticatedPatient?.questionnaires?.[formType];
+  const discrepancyWarning = saved && authenticatedPatient.questionnaireDiscrepancies.some(item => item.startsWith(formType))
+    ? `<div class="alert-danger">Saved ${formType} questionnaire found by NRIC/FIN, but its email differs from the registration email. Verify with clinic staff before relying on it.</div>`
+    : '';
+  const savedNotice = saved
+    ? `<div class="alert-success">Existing ${formType} questionnaire response loaded from the patient database.</div>`
+    : `<div class="alert-success">No saved ${formType} questionnaire was found. Complete the fields below to create one.</div>`;
+  const immutable = {
+    'Name': authenticatedPatient['Full Name'],
+    'ID Number': authenticatedPatient['NRIC/FIN/Passport Number'],
+    'Date of Birth': authenticatedPatient['Date of Birth (DD/MM/YY)'],
+    'Gender': authenticatedPatient['Sex']
+  };
+  const generalSections = {
+    'Your Details': ['Health Screening Provider','Health Screening Location','Name','ID Type','ID Number','Date of Birth','Email Address','Country Code','Phone Number','Address','Postal Code','Ethnicity (Race)','Gender','Pregnant (Female only)','Weeks Pregnant'],
+    'Your Medical History': ['Medical History - Conditions','Prior Surgery Details','Other Diseases (specify)','Present Health Complaints','Current Medications','Other Medications/Supplements','Drug Allergies','Drug Allergy Details','Recent Vaccination (Past 1 Month)','Flu Vaccination This Year','Menstrual Cycle','Contraception Use'],
+    'Your Family History': ['Family History'],
+    'Your Lifestyle': ['Exercise Frequency','Smoking Status','Alcohol Intake Level','Stress Frequency','Special Diet','Chronic Pain','Pain Area','Pain Level (1-10)','Sexual History Shared','Sexually Active (Past 12 Months)','No. of Sexual Partners (Past 12 Months)'],
+    'Acknowledgement': ['Acknowledged Declaration','Date Signed']
+  };
+  const occupationalSections = {
+    'Screening Type': ['Screening Type(s)','Health Screening Location'],
+    'Your Details': ['Name','ID Type','ID Number','Date of Birth','Email Address','Ethnicity (Race)','Gender'],
+    'Personal Medical History': ['Personal - Anaemia','Personal - Diabetes Mellitus','Personal - High Blood Pressure','Personal - High Cholesterol/Lipid Disorder','Personal - Heart Disease','Personal - Other Medical/Surgical Conditions','Personal - Current Medications'],
+    'Family History': ['Family - Diabetes Mellitus','Family - High Cholesterol/Lipid Disorder','Family - High Blood Pressure','Family - Heart Diseases','Family - Other Diseases'],
+    'Your Lifestyle': ['Lifestyle - Currently Smoking','Lifestyle - Alcohol','Lifestyle - Exercise'],
+    'Acknowledgement': ['Acknowledged Declaration','Consent to Disclose to Employer/Insurer','Date Signed']
+  };
+  const sections = formType === 'occupational' ? occupationalSections : generalSections;
+  const fallback = {'Email Address': pat.email, 'Phone Number': pat.phone, 'Address': pat.address, 'Postal Code': pat.postal};
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
+  const yesNoFields = field => /^(Personal|Family|Lifestyle) -|Pregnant|Acknowledged|Consent|Vaccination|Chronic Pain|Sexual History|Sexually Active|Drug Allergies/.test(field);
+  const renderField = field => {
+    const locked = Object.prototype.hasOwnProperty.call(immutable, field);
+    const value = locked ? immutable[field] : (saved?.[field] ?? fallback[field] ?? '');
+    const id = `questionnaire-${field.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+    if (!locked && yesNoFields(field)) {
+      return `<div><label class="field-label" for="${id}">${field}</label><select id="${id}" data-question="${escapeHtml(field)}"><option value=""></option><option ${value === 'No' ? 'selected' : ''}>No</option><option ${value === 'Yes' ? 'selected' : ''}>Yes</option></select></div>`;
+    }
+    const multiline = /Address|Details|Conditions|Complaints|History|Diseases|Medications|Diet|Pain Area/.test(field);
+    const control = multiline && !locked
+      ? `<textarea id="${id}" data-question="${escapeHtml(field)}" rows="3">${escapeHtml(value)}</textarea>`
+      : `<input type="text" id="${id}" data-question="${escapeHtml(field)}" value="${escapeHtml(value)}" ${locked ? 'readonly aria-readonly="true"' : ''}>`;
+    return `<div><label class="field-label" for="${id}">${field}${locked ? ' (verified — cannot be changed)' : ''}</label>${control}</div>`;
+  };
+  let html = `${savedNotice}${discrepancyWarning}<div class="alert-success">Fields marked “verified” come from the patient registry and cannot be edited. All other answers can be updated and saved.</div>`;
+  for (const [section, fields] of Object.entries(sections)) {
+    html += `<div class="q-block"><h3>${section}</h3><div class="field-grid">${fields.map(renderField).join('')}</div></div>`;
+  }
   if (pat.allergy !== "None") {
     html += `
       <div class="allergy-alert">
@@ -1460,38 +1660,6 @@ function buildSurveyInputs(pat) {
     `;
   }
   
-  html += `
-    <div class="q-block" style="border-top:1px dashed rgba(59, 82, 68, 0.2); padding-top:12px; margin-top:12px;">
-      <span class="field-label">Are you currently taking any prescription medications?</span>
-      <select id="sMedications">
-        <option value="No">No medications</option>
-        <option value="Yes">Yes, regular medical treatments</option>
-      </select>
-    </div>
-  `;
-  
-  if (pat.visitType === "occupational") {
-    html += `
-      <div class="q-block">
-        <span class="field-label">Select Workplace Hazards Exposure:</span>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label><input type="checkbox" id="hazNoise" checked> Noise Hazard (Deafness screening required)</label>
-          <label><input type="checkbox" id="hazSilica"> Silica / Fine Dust Hazard</label>
-          <label><input type="checkbox" id="hazLead"> Inorganic Lead Hazard</label>
-        </div>
-      </div>
-    `;
-  } else {
-    html += `
-      <div class="q-block">
-        <span class="field-label">Do you have family history of chronic illness?</span>
-        <select id="sFamily">
-          <option>No history</option>
-          <option>Yes (Heart attack / Stroke / Cancer)</option>
-        </select>
-      </div>
-    `;
-  }
   box.innerHTML = html;
 }
 
@@ -1502,29 +1670,64 @@ function buildReviewStep() {
   
   const apptStr = patientInputData.visitType === "prebooked" ? `${patientInputData.date} @ ${patientInputData.time}` : "Walk-in Lobby registration";
   document.getElementById('revAppt').textContent = apptStr;
+  document.getElementById('revScreeningType').textContent = patientInputData.screeningType === 'occupational' ? 'Occupational Health' : 'General Health';
   document.getElementById('revScheme').textContent = pat.insurerCode + " — " + pat.insurer;
   
-  const meds = document.getElementById('sMedications').value;
+  const meds = document.querySelector('[data-question="Current Medications"], [data-question="Personal - Current Medications"]')?.value || 'No';
   document.getElementById('revMeds').textContent = meds === "Yes" ? "Yes, active medications declared" : "None";
   document.getElementById('revAllergy').textContent = pat.allergy;
   document.getElementById('revAllergy').style.color = pat.allergy === "None" ? "var(--charcoal)" : "red";
 }
 
-function submitRegistration() {
+function collectQuestionnaireAnswers() {
+  const answers = {};
+  document.querySelectorAll('#surveyInputs input, #surveyInputs select, #surveyInputs textarea').forEach(field => {
+    const block = field.closest('.q-block') || field.parentElement;
+    const label = field.dataset.question || block?.querySelector(`label[for="${field.id}"]`)?.textContent ||
+      field.previousElementSibling?.textContent || field.id;
+    answers[label.trim()] = field.type === 'checkbox' ? field.checked : field.value;
+  });
+  return answers;
+}
+
+async function submitRegistration() {
   const btn = document.getElementById('nextBtn');
   btn.disabled = true;
   document.getElementById('submitSpinner').classList.remove('hidden');
-  
-  setTimeout(() => {
-    document.getElementById('submitSpinner').classList.add('hidden');
-    
+  try {
     const pat = patientInputData.prefill;
+    const formType = patientInputData.screeningType;
+    const questionnaireAnswers = collectQuestionnaireAnswers();
+    const response = await fetch('/doctor-apple/registrations', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`},
+      body: JSON.stringify({
+        identifier: pat.nric,
+        insurer_code: pat.insurerCode,
+        requested_tests: pat.covered || [],
+        form_type: formType,
+        appointment_type: patientInputData.visitType,
+        appointment_date: patientInputData.visitType === 'prebooked' ? patientInputData.date : null,
+        appointment_time: patientInputData.visitType === 'prebooked' ? patientInputData.time : null,
+        questionnaire_answers: questionnaireAnswers
+      })
+    });
+    const saved = await response.json();
+    if (!response.ok) throw new Error(saved.detail || 'Unable to save registration');
+    authenticatedPatient.questionnaires[formType] = {
+      ...questionnaireAnswers,
+      Name: authenticatedPatient['Full Name'],
+      'ID Number': authenticatedPatient['NRIC/FIN/Passport Number'],
+      'Date of Birth': authenticatedPatient['Date of Birth (DD/MM/YY)'],
+      Gender: authenticatedPatient['Sex']
+    };
+    document.getElementById('submitSpinner').classList.add('hidden');
     const newQueueNum = 2000 + queueDb.length + 1;
     const apptDateStr = patientInputData.visitType === "prebooked" ? patientInputData.date : "Today (Walk-in)";
     const apptTimeStr = patientInputData.visitType === "prebooked" ? patientInputData.time : "Lobby Queue";
     
     const newReg = {
-      id: "PT" + (100 + queueDb.length + 1),
+      id: saved.registration_id,
       name: pat.name,
       nric: pat.nric,
       type: patientInputData.visitType === "prebooked" ? "Pre-booked" : "Walk-in",
@@ -1532,10 +1735,12 @@ function submitRegistration() {
       insurance: pat.insurer,
       status: "Awaiting ID check",
       allergy: pat.allergy,
-      visitType: pat.visitType,
+      visitType: patientInputData.screeningType,
       prefill: pat,
       log: ["LOG Checked", "Digital Intake submission completed"],
-      bill: { total: pat.visitType === "occupational" ? 180.00 : 250.00, covered: pat.visitType === "occupational" ? 180.00 : 250.00, copay: 0.00 },
+      bill: pat.insurerCode === 'SELF_PAY'
+        ? { total: 45.00, covered: 0.00, copay: 45.00 }
+        : { total: patientInputData.screeningType === "occupational" ? 180.00 : 250.00, covered: patientInputData.screeningType === "occupational" ? 180.00 : 250.00, copay: 0.00 },
       insurerCode: pat.insurerCode,
       packageName: pat.packageName,
       date: apptDateStr,
@@ -1552,7 +1757,11 @@ function submitRegistration() {
     document.getElementById('prevBtn').style.display = 'none';
     document.getElementById('nextBtn').style.display = 'none';
     document.getElementById('patientSuccessBox').style.display = 'block';
-  }, 1000);
+  } catch (error) {
+    document.getElementById('submitSpinner').classList.add('hidden');
+    alert(error.message);
+    btn.disabled = false;
+  }
 }
 
 // Start New Pre-registration restart link
@@ -1635,6 +1844,7 @@ function renderQueue() {
               ${pat.log.map(l => `[LOG] ${l}`).join("<br>")}
             </div>
           </div>
+          ${pat.tpaReasons?.length ? `<div class="${pat.tpaDecision === 'approved' ? 'alert-success' : 'alert-danger'}"><b>TPA ${pat.tpaDecision.replace('_', ' ')}:</b><ul>${pat.tpaReasons.map(reason => `<li>${reason}</li>`).join('')}</ul></div>` : ''}
           
           ${pat.status === "Awaiting ID check" ? `
             <p class="warn-text">⚠️ <b>Mandatory Verification Check:</b> Ask patient for their physical NRIC/FIN and verify that details match.</p>
@@ -1695,8 +1905,14 @@ function renderQueue() {
     }
     
     if (admitBtn) {
-      admitBtn.addEventListener('click', () => {
+      admitBtn.addEventListener('click', async () => {
+        const response = await fetch(`/doctor-apple/registrations/${pat.id}/staff-verify`, {
+          method: 'POST', headers: {Authorization: `Bearer ${accessToken}`}
+        });
+        const result = await response.json();
+        if (!response.ok) return alert(result.detail || 'Unable to verify patient');
         pat.status = "Consulting";
+        pat.identityVerified = true;
         pat.log.push("Physical ID verified at reception");
         pat.log.push("Power Automate RPA synchronised patient database to Clinic Assist");
         renderQueue();
@@ -1704,9 +1920,25 @@ function renderQueue() {
     }
     
     if (claimBtn) {
-      claimBtn.addEventListener('click', () => {
-        pat.status = "Claim Submitted (Pending TPA)";
-        pat.log.push("Claims payload pushed automatically to TPA portal");
+      claimBtn.addEventListener('click', async () => {
+        const response = await fetch(`/doctor-apple/registrations/${pat.id}/submit-claim`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`},
+          body: JSON.stringify({total_amount: pat.bill.total, performed_tests: pat.prefill?.covered || []})
+        });
+        const result = await response.json();
+        if (!response.ok) return alert(result.detail || 'Unable to submit claim');
+        const labels = {
+          tpa_auto_approved: 'TPA Auto-approved',
+          tpa_auto_rejected: 'TPA Auto-rejected',
+          pending_manual_tpa_review: 'Pending Manual TPA Review',
+          self_pay_completed: 'Self-pay Completed'
+        };
+        pat.status = labels[result.status] || result.status;
+        pat.tpaDecision = result.decision;
+        pat.tpaReasons = result.reasons;
+        pat.log.push(`TPA decision: ${pat.status}`);
+        result.reasons.forEach(reason => pat.log.push(`TPA reason: ${reason}`));
         renderQueue();
       });
     }
@@ -1969,7 +2201,7 @@ function renderTpaClaims() {
   const filterInsurer = document.getElementById('tpaFilterInsurer').value;
   const filterStatus = document.getElementById('tpaFilterStatus').value;
   
-  const claims = queueDb.filter(pat => pat.status.includes("Claim") || pat.status.includes("Paid") || pat.status.includes("Approved") || pat.status.includes("Rejected"));
+  const claims = queueDb.filter(pat => pat.insurerCode !== 'SELF_PAY' && (pat.status.includes("Claim") || pat.status.includes("TPA") || pat.status.includes("Paid") || pat.status.includes("Approved") || pat.status.includes("Rejected")));
   
   const filteredClaims = claims.filter(c => {
     const matchQuery = c.name.toLowerCase().includes(q) || c.nric.toLowerCase().includes(q) || c.id.toLowerCase().includes(q);
@@ -2019,7 +2251,9 @@ function renderTpaClaims() {
             <tr><td><b>Insurer Policy Code:</b></td><td>${claim.insurerCode}</td></tr>
             <tr><td><b>Identity Verified physically:</b></td><td>Confirmed at clinic counter check</td></tr>
             <tr><td><b>Allergy Declared:</b></td><td>${claim.allergy}</td></tr>
+            <tr><td><b>Automated Decision:</b></td><td>${claim.tpaDecision || 'Pending'}</td></tr>
           </table>
+          ${claim.tpaReasons?.length ? `<div class="${claim.tpaDecision === 'approved' ? 'alert-success' : 'alert-danger'}"><b>Decision reasons</b><ul>${claim.tpaReasons.map(reason => `<li>${reason}</li>`).join('')}</ul></div>` : ''}
         </div>
         <div class="c2">
           <div class="benefit-box" style="background:white; margin-bottom:10px;">

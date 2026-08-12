@@ -26,10 +26,9 @@ Local Hack4Health prototype for clinic pre-registration, synthetic patient looku
    agents-cli install
    ```
 
-5. Seed synthetic patients and a staff login:
+5. Seed synthetic patients and the patient, staff, and TPA accounts:
 
    ```powershell
-   $env:STAFF_PASSWORD='replace-with-a-strong-password'
    uv run python scripts/seed.py
    ```
 
@@ -43,14 +42,13 @@ Open `http://127.0.0.1:8000/docs` for the REST API and `http://127.0.0.1:8000/de
 
 ## Key endpoints
 
-- `POST /doctor-apple/auth/register`
 - `POST /doctor-apple/auth/login`
 - `POST /doctor-apple/documents/extract`
 - `POST /doctor-apple/registrations`
 - `POST /doctor-apple/registrations/{id}/staff-verify`
 - `GET /doctor-apple/health`
 
-All endpoints except health and signup/login require a bearer token. Only staff tokens can seed data or confirm in-person identity verification.
+All endpoints except health and login require a bearer token. Patient accounts use their synthetic-data email with `PatientApple`; the demo staff and TPA accounts are `staff@doctorapple.com` / `StaffApple` and `tpa@doctorapple.com` / `TPAApple`. Only staff tokens can seed data or confirm in-person identity verification.
 
 ## Offline tests
 
@@ -79,4 +77,3 @@ FastAPI + ADK/A2A
 ```
 
 See [COPILOT_STUDIO.md](COPILOT_STUDIO.md) for the later Microsoft integration path.
-

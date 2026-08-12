@@ -21,6 +21,9 @@ class Settings:
     mongodb_database: str = os.getenv("MONGODB_DATABASE", "doctor_apple")
     token_secret: str = os.getenv("APP_TOKEN_SECRET", "local-development-only")
     offline_mode: bool = os.getenv("OFFLINE_MODE", "false").lower() == "true"
+    patient_password: str = os.getenv("PATIENT_PASSWORD", "PatientApple")
+    tpa_password: str = os.getenv("TPA_PASSWORD", "TPAApple")
+    staff_password: str = os.getenv("STAFF_PASSWORD", "StaffApple")
 
 
 settings = Settings()

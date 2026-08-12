@@ -27,8 +27,8 @@ def mask_identifier(value: str) -> str:
 
 
 def hash_password(password: str) -> str:
-    if len(password) < 10:
-        raise ValueError("Password must contain at least 10 characters")
+    if len(password) < 8:
+        raise ValueError("Password must contain at least 8 characters")
     salt = os.urandom(16)
     derived = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 600_000)
     return (

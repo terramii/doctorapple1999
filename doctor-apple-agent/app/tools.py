@@ -47,4 +47,12 @@ def generate_questionnaire_prefill(identifier: str, form_type: str) -> dict[str,
         return {"status": "manual_review", "reason": "Patient not found"}
     if form_type not in {"general", "occupational"}:
         return {"status": "manual_review", "reason": "Unknown form type"}
-    return {"status": "success", "prefill": build_prefill(patient, form_type)}
+    saved_response = patient.get("questionnaires", {}).get(form_type)
+    return {
+        "status": "success",
+        "prefill": build_prefill(patient, form_type),
+        "saved_response": saved_response,
+        "response_available": saved_response is not None,
+        "requires_manual_review": bool(patient.get("questionnaire_discrepancies")),
+        "discrepancies": patient.get("questionnaire_discrepancies", []),
+    }

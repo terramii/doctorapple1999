@@ -154,10 +154,71 @@ def set_store(store: MongoStore | MemoryStore) -> None:
 
 
 def seed_patients(store: MongoStore | MemoryStore, csv_path: Path) -> int:
+    questionnaire_files = {
+        "general": csv_path.with_name("general_health_questionnaire_mock_patients.csv"),
+        "occupational": csv_path.with_name(
+            "occupational_health_questionnaire_mock_patients.csv"
+        ),
+    }
+    questionnaires: dict[str, dict[str, dict[str, Any]]] = {
+        form_type: {} for form_type in questionnaire_files
+    }
+    for form_type, questionnaire_path in questionnaire_files.items():
+        with questionnaire_path.open(encoding="utf-8-sig", newline="") as handle:
+            for response in csv.DictReader(handle):
+                identifier = normalize_identifier(response.get("ID Number", ""))
+                if identifier:
+                    questionnaires[form_type][identifier] = response
     count = 0
     with csv_path.open(encoding="utf-8-sig", newline="") as handle:
         for patient in csv.DictReader(handle):
+            identifier = normalize_identifier(
+                patient["NRIC/FIN/Passport Number"]
+            )
+            patient["questionnaires"] = {
+                form_type: responses.get(identifier)
+                for form_type, responses in questionnaires.items()
+            }
+            patient["questionnaire_discrepancies"] = [
+                f"{form_type} questionnaire email differs from registration email"
+                for form_type, response in patient["questionnaires"].items()
+                if response
+                and normalize_email(response.get("Email Address", ""))
+                != normalize_email(patient.get("Email", ""))
+            ]
             store.upsert_patient(patient)
+            count += 1
+    registered_ids = {
+        normalize_identifier(patient["NRIC/FIN/Passport Number"])
+        for patient in store.collections["patients"]
+    } if isinstance(store, MemoryStore) else {
+        normalize_identifier(row["NRIC/FIN/Passport Number"])
+        for row in csv.DictReader(csv_path.open(encoding="utf-8-sig", newline=""))
+    }
+    for form_type, responses in questionnaires.items():
+        for identifier, response in responses.items():
+            if identifier in registered_ids:
+                continue
+            patient = {
+                "Full Name": response.get("Name", ""),
+                "NRIC/FIN/Passport Number": response.get("ID Number", ""),
+                "Sex": response.get("Gender", ""),
+                "Nationality": "",
+                "Date of Birth (DD/MM/YY)": response.get("Date of Birth", ""),
+                "Address": response.get("Address", ""),
+                "Postal Code": response.get("Postal Code", ""),
+                "Contact - Home": "",
+                "Contact - Office": "",
+                "Contact - Mobile": response.get("Phone Number", ""),
+                "Email": response.get("Email Address", ""),
+                "Drug Allergy": response.get("Drug Allergy Details", ""),
+                "questionnaires": {"general": None, "occupational": None},
+                "questionnaire_discrepancies": [],
+                "registration_source": f"{form_type}_questionnaire",
+            }
+            patient["questionnaires"][form_type] = response
+            store.upsert_patient(patient)
+            registered_ids.add(identifier)
             count += 1
     return count
 

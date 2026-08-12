@@ -2,6 +2,13 @@
 
 Clinic pre-registration prototype with three portals: **Patient**, **Clinic Staff**, and **TPA Assessor**. Agnes AI extracts medical-chit details; deterministic rules handle eligibility, coverage, questionnaire prefill, allergy warnings, and staff identity-verification gates.
 
+## Hack4Health submission
+
+- Required technical-track write-up: [TECHNICAL_TRACK_SUBMISSION.md](TECHNICAL_TRACK_SUBMISSION.md)
+- Mandatory-field and judging-evidence audit: [SUBMISSION_CHECKLIST.md](SUBMISSION_CHECKLIST.md)
+
+The submission still contains clearly marked placeholders for institution, team members, and contact person; complete those fields and verify the exported PDF stays within four pages before submitting.
+
 ## Local setup (Windows)
 
 ### 1. Install prerequisites

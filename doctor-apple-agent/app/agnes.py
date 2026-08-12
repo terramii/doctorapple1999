@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import Any
@@ -67,3 +68,31 @@ async def extract_chit(text: str) -> ChitExtraction:
         raise RuntimeError(
             "Agnes extraction failed; manual review is required"
         ) from exc
+
+
+async def extract_chit_image(content: bytes, media_type: str) -> ChitExtraction:
+    """Extract a photographed chit using Agnes multimodal input."""
+    if not settings.agnes_api_key:
+        raise RuntimeError("AGNES_AI_API_KEY is not configured")
+    schema = "Return JSON only with keys: full_name, identifier, date_of_birth, gender, insurer_code, requested_tests, form_type, confidence, discrepancies. Never infer missing facts."
+    payload = {
+        "model": settings.agnes_model,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": schema},
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{base64.b64encode(content).decode('ascii')}"}},
+        ]}],
+        "temperature": 0,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{settings.agnes_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.agnes_api_key}"},
+                json=payload,
+            )
+            response.raise_for_status()
+        return ChitExtraction.model_validate(
+            _json_object(response.json()["choices"][0]["message"]["content"])
+        )
+    except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError, ValidationError) as exc:
+        raise RuntimeError("Agnes image extraction failed; manual review is required") from exc
