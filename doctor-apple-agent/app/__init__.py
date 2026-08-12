@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .agent import app
+"""Doctor Apple application package.
 
-__all__ = ["app"]
+Import ``app.agent`` explicitly when the ADK application is required. Keeping the
+package initializer side-effect free allows lightweight API runtimes such as
+Vercel to import ``app.api`` without loading the full ADK development stack.
+"""

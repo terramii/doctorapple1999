@@ -15,7 +15,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 AGENT_DIR = ROOT_DIR / "doctor-apple-agent"
 sys.path.insert(0, str(AGENT_DIR))
 
-from app.api import router as doctor_apple_router
+from app.api import router as doctor_apple_router  # noqa: E402
 
 SAMPLE_APP_DIR = ROOT_DIR / "sample app"
 DATA_DIR = ROOT_DIR / "Data"
@@ -24,7 +24,11 @@ app = FastAPI(
     title="Doctor Apple",
     description="Patient registration, clinic workflow, and TPA prototype API",
 )
-origins = [origin.strip() for origin in os.getenv("ALLOW_ORIGINS", "").split(",") if origin.strip()]
+origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOW_ORIGINS", "").split(",")
+    if origin.strip()
+]
 if origins:
     app.add_middleware(
         CORSMiddleware,
