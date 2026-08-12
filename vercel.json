@@ -2,9 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "functions": {
-    "server.py": {
+    "api/index.py": {
       "maxDuration": 60,
       "excludeFiles": "{.publish-doctorapple/**,.tmp-*/**,doctor-apple-agent/.venv/**,doctor-apple-agent/tests/**,doctor-apple-agent/.pytest_cache/**,doctor-apple-agent/.ruff_cache/**,Resources/**}"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ]
 }
