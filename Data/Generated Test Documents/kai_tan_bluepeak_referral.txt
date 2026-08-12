@@ -1,0 +1,44 @@
+SYNTHETIC HACKATHON TEST DOCUMENT — NOT A REAL INSURANCE AUTHORIZATION
+
+BLUEPEAK WELLNESS
+Health Screening Referral / Insurance Voucher
+
+Document Reference: BLPHS-KAI-20260813-001
+Issue Date: 13/08/2026
+Validity: Hack4Health prototype demonstration only
+
+PATIENT DETAILS
+Full Name: Tan Kai Xuan
+NRIC/FIN/Passport Number: S4744854C
+Date of Birth: 18/12/93
+Sex: M
+Email Address: kai.tan78@gmail.com
+Mobile Number: 89478454
+
+POLICY AND TPA DETAILS
+Insurer / TPA: Bluepeak Wellness
+Insurer / Policy Code: BLPHS
+Screening Package Code: WELL1
+Screening Package Name: BluePeak Essential Screen
+Claim Processing: Submit to the Doctor Apple simulated TPA portal after clinic staff complete in-person identity verification.
+
+REFERRED AND COVERED SERVICES
+- Complete History Taking
+- Complete Physical Examination
+- BMI and Fat Composition
+- Blood pressure measurement
+- Full Blood Count
+- Cholesterol screening
+
+CLINIC INSTRUCTIONS
+1. Match the document name, identifier, date of birth, and email to the signed-in patient.
+2. Clinic staff must inspect the patient's physical identity document or corporate e-card in person.
+3. Services outside the listed package require manual TPA review or self-payment.
+4. Submit only completed covered services to the simulated TPA claim flow.
+
+TEST EXPECTATION
+- Covered claim amount of SGD 250.00: expected automatic approval after identity verification.
+- Claim amount above SGD 500.00: expected automatic rejection with the policy-limit reason.
+- Any unlisted service: expected manual TPA review with the uncovered-service reason.
+
+This file contains synthetic data supplied for the Hack4Health Doctor Apple prototype. It has no financial, insurance, medical, or legal validity.

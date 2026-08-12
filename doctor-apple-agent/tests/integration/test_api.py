@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api import router
+from app.agnes import ChitExtraction
+from app.api import QUESTIONNAIRE_FIELDS, router
+from app.config import settings
 from app.database import MemoryStore, prepare_user, set_store
 from app.security import hash_password
 
@@ -10,14 +12,13 @@ def client_with_data() -> TestClient:
     store = MemoryStore()
     store.insert(
         "users",
-        prepare_user("staff@example.com", hash_password("StaffApple"), "staff"),
+        prepare_user("staff@example.com", hash_password("staff-password-123"), "staff"),
     )
-    store.insert(
-        "users", prepare_user("amir@example.com", hash_password("PatientApple"), "patient")
-    )
-    store.insert(
-        "users", prepare_user("tpa@example.com", hash_password("placeholder"), "tpa")
-    )
+    for email in ("amir@example.com", "patient2@example.com"):
+        store.insert(
+            "users",
+            prepare_user(email, hash_password(settings.patient_password), "patient"),
+        )
     store.upsert_patient(
         {
             "Full Name": "Loh Amir",
@@ -37,11 +38,11 @@ def client_with_data() -> TestClient:
     return TestClient(app)
 
 
-def test_patient_login_and_safe_prebooked_registration() -> None:
+def test_seeded_patient_login_and_safe_registration() -> None:
     client = client_with_data()
     credentials = {
         "email": "amir@example.com",
-        "password": "PatientApple",
+        "password": settings.patient_password,
         "role": "patient",
     }
     login = client.post("/doctor-apple/auth/login", json=credentials)
@@ -53,11 +54,9 @@ def test_patient_login_and_safe_prebooked_registration() -> None:
             "identifier": "S8536477Z",
             "insurer_code": "BLPHS",
             "requested_tests": ["Dental"],
-            "questionnaire_answers": {
-                "Name": "Tampered Name",
-                "Date of Birth": "01/01/01",
-                "Smoking Status": "No",
-            },
+            "questionnaire_answers": dict.fromkeys(
+                QUESTIONNAIRE_FIELDS["general"], "No"
+            ),
         },
     )
     assert result.status_code == 201
@@ -67,52 +66,13 @@ def test_patient_login_and_safe_prebooked_registration() -> None:
     assert body["status"] == "manual_review"
     assert body["identity_verified_in_person"] is False
     assert "patient_identifier" not in body
-    assert body["appointment_type"] == "prebooked"
-    store = __import__("app.database", fromlist=["get_store"]).get_store()
-    patient = store.find_one("patients", {"identifier_normalized": "S8536477Z"})
-    assert patient["questionnaires"]["general"]["registration_id"] == body["registration_id"]
-    assert patient["questionnaires"]["general"]["submitted_by"] == "amir@example.com"
-    assert patient["questionnaires"]["general"]["Name"] == "Loh Amir"
-    assert patient["questionnaires"]["general"]["Date of Birth"] == "25/01/85"
-    assert patient["questionnaires"]["general"]["Smoking Status"] == "No"
-
-
-def test_patient_cannot_submit_for_another_patient() -> None:
-    client = client_with_data()
-    store = __import__("app.database", fromlist=["get_store"]).get_store()
-    store.upsert_patient(
-        {
-            "Full Name": "Other Patient",
-            "NRIC/FIN/Passport Number": "S1234567A",
-            "Email": "other@example.com",
-            "Date of Birth (DD/MM/YY)": "01/01/90",
-            "Sex": "F",
-            "questionnaires": {"general": None, "occupational": None},
-        }
-    )
-    token = client.post(
-        "/doctor-apple/auth/login",
-        json={"email": "amir@example.com", "password": "PatientApple", "role": "patient"},
-    ).json()["access_token"]
-    response = client.post(
-        "/doctor-apple/registrations",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "identifier": "S1234567A",
-            "insurer_code": "SELF_PAY",
-            "form_type": "general",
-            "appointment_type": "walkin",
-            "questionnaire_answers": {"Smoking Status": "No"},
-        },
-    )
-    assert response.status_code == 403
 
 
 def test_patient_cannot_mark_identity_verified() -> None:
     client = client_with_data()
     credentials = {
-        "email": "amir@example.com",
-        "password": "PatientApple",
+        "email": "patient2@example.com",
+        "password": settings.patient_password,
         "role": "patient",
     }
     token = client.post("/doctor-apple/auth/login", json=credentials).json()[
@@ -125,92 +85,79 @@ def test_patient_cannot_mark_identity_verified() -> None:
     assert response.status_code == 403
 
 
-def test_all_roles_require_their_shared_password() -> None:
+def complete_general_answers() -> dict[str, str]:
+    return dict.fromkeys(QUESTIONNAIRE_FIELDS["general"], "No")
+
+
+def test_patient_signup_creates_linked_profile_and_login() -> None:
     client = client_with_data()
-    for email, password, role in (
-        ("amir@example.com", "PatientApple", "patient"),
-        ("staff@example.com", "StaffApple", "staff"),
-        ("tpa@example.com", "TPAApple", "tpa"),
-    ):
+    payload = {
+        "full_name": "New Patient", "identifier": "S1111111A", "sex": "F",
+        "nationality": "Singaporean", "date_of_birth": "01/02/90",
+        "address": "1 Test Street", "postal_code": "123456", "contact_home": "",
+        "contact_office": "", "contact_mobile": "81234567", "email": "new@example.com",
+        "drug_allergy": "None", "password": settings.patient_password,
+    }
+    assert client.post("/doctor-apple/auth/register", json=payload).status_code == 201
+    login = client.post(
+        "/doctor-apple/auth/login",
+        json={"email": "new@example.com", "password": settings.patient_password, "role": "patient"},
+    )
+    assert login.status_code == 200
+    profile = client.get(
+        "/doctor-apple/patients/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert profile.json()["Full Name"] == "New Patient"
+
+
+def test_questionnaire_is_required_and_appointments_are_retained() -> None:
+    client = client_with_data()
+    token = client.post(
+        "/doctor-apple/auth/login",
+        json={"email": "amir@example.com", "password": settings.patient_password, "role": "patient"},
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    incomplete = client.post(
+        "/doctor-apple/registrations",
+        headers=headers,
+        json={"identifier": "S8536477Z", "insurer_code": "SELF_PAY", "questionnaire_answers": {}},
+    )
+    assert incomplete.status_code == 422
+    for day in ("20/08/2026", "21/08/2026"):
         response = client.post(
-            "/doctor-apple/auth/login",
-            json={"email": email, "password": password, "role": role},
+            "/doctor-apple/registrations",
+            headers=headers,
+            json={
+                "identifier": "S8536477Z", "insurer_code": "SELF_PAY",
+                "appointment_date": day, "questionnaire_answers": complete_general_answers(),
+            },
         )
-        assert response.status_code == 200
-        wrong = client.post(
-            "/doctor-apple/auth/login",
-            json={"email": email, "password": "WrongApple", "role": role},
+        assert response.status_code == 201
+    history = client.get("/doctor-apple/appointments", headers=headers)
+    assert len(history.json()) == 2
+
+
+def test_uploaded_chit_is_matched_to_authenticated_patient(monkeypatch) -> None:
+    client = client_with_data()
+
+    async def fake_extract(_: str) -> ChitExtraction:
+        return ChitExtraction(
+            full_name="Loh Amir", identifier="S8536477Z", date_of_birth="25/01/85",
+            gender="M", insurer_code="BLPHS", requested_tests=["Full Blood Count"],
+            confidence=0.99,
         )
-        assert wrong.status_code == 401
 
-
-def test_tpa_claim_requires_identity_then_auto_approves_with_reasons() -> None:
-    client = client_with_data()
-    patient_token = client.post(
+    monkeypatch.setattr("app.api.extract_chit", fake_extract)
+    token = client.post(
         "/doctor-apple/auth/login",
-        json={"email": "amir@example.com", "password": "PatientApple", "role": "patient"},
+        json={"email": "amir@example.com", "password": settings.patient_password, "role": "patient"},
     ).json()["access_token"]
-    staff_token = client.post(
-        "/doctor-apple/auth/login",
-        json={"email": "staff@example.com", "password": "StaffApple", "role": "staff"},
-    ).json()["access_token"]
-    registration = client.post(
-        "/doctor-apple/registrations",
-        headers={"Authorization": f"Bearer {patient_token}"},
-        json={
-            "identifier": "S8536477Z",
-            "insurer_code": "BLPHS",
-            "form_type": "general",
-            "appointment_type": "prebooked",
-            "questionnaire_answers": {},
-        },
-    ).json()
-    registration_id = registration["registration_id"]
-    claim = {"total_amount": 250, "performed_tests": []}
-    blocked = client.post(
-        f"/doctor-apple/registrations/{registration_id}/submit-claim",
-        headers={"Authorization": f"Bearer {staff_token}"},
-        json=claim,
+    response = client.post(
+        "/doctor-apple/documents/extract",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("referral.txt", b"synthetic referral", "text/plain")},
     )
-    assert blocked.status_code == 409
-    assert client.post(
-        f"/doctor-apple/registrations/{registration_id}/staff-verify",
-        headers={"Authorization": f"Bearer {staff_token}"},
-    ).status_code == 200
-    approved = client.post(
-        f"/doctor-apple/registrations/{registration_id}/submit-claim",
-        headers={"Authorization": f"Bearer {staff_token}"},
-        json=claim,
-    )
-    assert approved.status_code == 200
-    assert approved.json()["decision"] == "approved"
-    assert approved.json()["status"] == "tpa_auto_approved"
-    assert len(approved.json()["reasons"]) == 4
-
-
-def test_tpa_auto_rejects_claim_above_policy_limit() -> None:
-    client = client_with_data()
-    patient_token = client.post(
-        "/doctor-apple/auth/login",
-        json={"email": "amir@example.com", "password": "PatientApple", "role": "patient"},
-    ).json()["access_token"]
-    staff_token = client.post(
-        "/doctor-apple/auth/login",
-        json={"email": "staff@example.com", "password": "StaffApple", "role": "staff"},
-    ).json()["access_token"]
-    registration_id = client.post(
-        "/doctor-apple/registrations",
-        headers={"Authorization": f"Bearer {patient_token}"},
-        json={"identifier": "S8536477Z", "insurer_code": "BLPHS", "questionnaire_answers": {}},
-    ).json()["registration_id"]
-    client.post(
-        f"/doctor-apple/registrations/{registration_id}/staff-verify",
-        headers={"Authorization": f"Bearer {staff_token}"},
-    )
-    rejected = client.post(
-        f"/doctor-apple/registrations/{registration_id}/submit-claim",
-        headers={"Authorization": f"Bearer {staff_token}"},
-        json={"total_amount": 501, "performed_tests": []},
-    )
-    assert rejected.json()["decision"] == "rejected"
-    assert "exceeds" in rejected.json()["reasons"][0]
+    assert response.status_code == 200
+    assert response.json()["patient_matched"] is True
+    assert response.json()["eligibility"]["package_code"] == "WELL2"

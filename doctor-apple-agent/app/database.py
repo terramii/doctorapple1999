@@ -62,6 +62,16 @@ class MongoStore:
         except PyMongoError as exc:
             raise StoreError("Database operation failed") from exc
 
+    def find_many(self, collection: str, query: dict[str, Any]) -> list[dict[str, Any]]:
+        try:
+            results = []
+            for result in self.db[collection].find(query).sort("created_at", -1):
+                result["_id"] = str(result["_id"])
+                results.append(result)
+            return results
+        except PyMongoError as exc:
+            raise StoreError("Database operation failed") from exc
+
     def update_one(
         self, collection: str, query: dict[str, Any], update: dict[str, Any]
     ) -> bool:
@@ -116,6 +126,14 @@ class MemoryStore:
             if all(document.get(key) == value for key, value in query.items()):
                 return deepcopy(document)
         return None
+
+    def find_many(self, collection: str, query: dict[str, Any]) -> list[dict[str, Any]]:
+        results = [
+            deepcopy(document)
+            for document in self.collections[collection]
+            if all(document.get(key) == value for key, value in query.items())
+        ]
+        return list(reversed(results))
 
     def update_one(
         self, collection: str, query: dict[str, Any], update: dict[str, Any]

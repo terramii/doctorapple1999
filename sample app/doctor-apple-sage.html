@@ -51,7 +51,7 @@
   
   /* Glassmorphic Topbar */
   .topbar {
-    background: rgba(59, 82, 68, 0.92);
+    background: linear-gradient(90deg, rgba(146, 187, 166, 0.96), rgba(114, 158, 135, 0.96));
     backdrop-filter: blur(12px);
     color: var(--white);
     padding: 16px 32px;
@@ -61,6 +61,7 @@
     box-shadow: 0 4px 30px rgba(0,0,0,0.03);
     border-bottom: 1px solid rgba(255,255,255,0.1);
   }
+  .topbar .status-badge { background: rgba(255,255,255,.82); color: var(--sage-dark); }
   .topbar .logo { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .topbar-brand-icon {
     display: block;
@@ -460,6 +461,24 @@
       <input type="password" id="authPassword" autocomplete="current-password" minlength="8" placeholder="Enter the role password">
       <div id="rolePasswordHint" style="font-size:0.82rem; color:var(--sage-mid); margin-top:6px;">Patient account password: PatientApple</div>
     </div>
+    <button type="button" class="auth-tab active" id="showLoginBtn" style="width:49%;">Log in</button>
+    <button type="button" class="auth-tab" id="showSignupBtn" style="width:49%;">Create patient account</button>
+    <div id="signupFields" class="auth-fields hidden" style="margin-top:18px; max-height:52vh; overflow-y:auto; padding-right:5px;">
+      <div class="field-grid">
+        <div><label class="field-label">Full Name *</label><input id="signupName" required></div>
+        <div><label class="field-label">NRIC/FIN/Passport Number *</label><input id="signupIdentifier" required></div>
+        <div><label class="field-label">Sex *</label><select id="signupSex" required><option value="">Choose</option><option value="M">Male</option><option value="F">Female</option></select></div>
+        <div><label class="field-label">Nationality *</label><input id="signupNationality" required></div>
+        <div><label class="field-label">Date of Birth (DD/MM/YY) *</label><input id="signupDob" placeholder="DD/MM/YY" required></div>
+        <div><label class="field-label">Postal Code *</label><input id="signupPostal" required></div>
+        <div style="grid-column:1/-1"><label class="field-label">Address *</label><input id="signupAddress" required></div>
+        <div><label class="field-label">Home Contact</label><input id="signupHome"></div>
+        <div><label class="field-label">Office Contact</label><input id="signupOffice"></div>
+        <div><label class="field-label">Mobile Contact *</label><input id="signupMobile" required></div>
+        <div><label class="field-label">Drug Allergy *</label><input id="signupAllergy" placeholder="Enter None if none" required></div>
+      </div>
+      <div style="font-size:.8rem;color:var(--sage-mid);margin-top:8px;">Email and password are taken from the fields above. All required details match the synthetic patient-registration structure.</div>
+    </div>
     <div id="authMessage" class="auth-message" role="status" aria-live="polite"></div>
     <button class="btn" id="loginBtn" style="width:100%; padding:14px; border-radius:30px;">Log in to Patient Portal</button>
   </div>
@@ -515,7 +534,7 @@
         </div>
 
         <div class="columns">
-          <div class="col-main">
+          <div class="col-main" style="width:100%;">
             <!-- Wizard Step 1 -->
             <div class="glass-card wizard-step" id="step1Content">
               <div class="glass-card-header">Step 1: Appointment & Booking details</div>
@@ -597,12 +616,24 @@
                   <input type="text" id="pName" readonly>
                   <label class="field-label">NRIC/FIN Number</label>
                   <input type="text" id="pNric" readonly>
+                  <label class="field-label">Date of Birth</label>
+                  <input type="text" id="pDob" readonly>
+                  <label class="field-label">Sex</label>
+                  <input type="text" id="pSex" readonly>
+                  <label class="field-label">Nationality</label>
+                  <input type="text" id="pNationality" readonly>
                 </div>
                 <div>
                   <label class="field-label">Matched Policy / Insurer</label>
                   <input type="text" id="pInsurer" readonly>
                   <label class="field-label">Assigned Screening Package</label>
                   <input type="text" id="pPackage" readonly>
+                  <label class="field-label">Email Address</label>
+                  <input type="email" id="pEmail" readonly>
+                  <label class="field-label">Mobile Contact</label>
+                  <input type="text" id="pMobile" readonly>
+                  <label class="field-label">Residential Address</label>
+                  <textarea id="pAddress" rows="3" readonly></textarea>
                 </div>
               </div>
             </div>
@@ -655,18 +686,13 @@
             </div>
           </div>
 
-          <!-- Wizard Sidebar Overview -->
-          <div class="col-side">
-            <div class="glass-card">
-              <div class="glass-card-header">Wizard Overview</div>
-              <table style="width:100%; font-size:0.9rem; border-collapse:collapse;">
-                <tr style="height:32px; border-bottom:1px solid rgba(59, 82, 68, 0.1);"><td><b>Visit Type:</b></td><td id="sideVisitType">Pre-booked</td></tr>
-                <tr style="height:32px; border-bottom:1px solid rgba(59, 82, 68, 0.1);"><td><b>Insurer Coverage:</b></td><td id="sideInsurer">Awaiting Scan</td></tr>
-                <tr style="height:32px;"><td><b>Allergy Alert:</b></td><td id="sideAllergy" style="font-weight:bold; color:var(--success-text);">None</td></tr>
-              </table>
-            </div>
-          </div>
         </div>
+      </div>
+
+      <div id="panel-patient-appointments" class="portal-panel hidden">
+        <h1>Past Appointments</h1>
+        <p class="subtitle">Every submitted appointment is retained in MongoDB and belongs to the signed-in account.</p>
+        <div class="glass-card"><div class="glass-card-header">Appointment History</div><div id="appointmentHistory"></div></div>
       </div>
 
       <!-- Patient: Account Profile -->
@@ -1159,6 +1185,7 @@ let patientInputData = {
 const roleSidebars = {
   patient: [
     { id: "panel-patient-wizard", label: "Pre-Registration Portal" },
+    { id: "panel-patient-appointments", label: "Past Appointments" },
     { id: "panel-patient-account", label: "Account Profile" },
     { id: "panel-patient-personal", label: "Personal Information" },
     { id: "panel-patient-policy", label: "Policy & Coverage Details" },
@@ -1199,6 +1226,7 @@ function switchPanel(panelId) {
   if (panelId === 'panel-staff-policies') renderPolicies();
   if (panelId === 'panel-tpa-claims') renderTpaClaims();
   if (panelId === 'panel-tpa-patients') renderTpaPatients();
+  if (panelId === 'panel-patient-appointments') renderAppointmentHistory();
 }
 
 function renderSidebar() {
@@ -1229,7 +1257,7 @@ const roleLabels = {
 };
 
 function updateAuthButton() {
-  document.getElementById('loginBtn').textContent = `Log in to ${roleLabels[selectedRole]}`;
+  document.getElementById('loginBtn').textContent = authMode === 'signup' ? 'Create Patient Account' : `Log in to ${roleLabels[selectedRole]}`;
   const passwords = {patient: "PatientApple", staff: "StaffApple", tpa: "TPAApple"};
   document.getElementById('rolePasswordHint').textContent = `${roleLabels[selectedRole]} account password: ${passwords[selectedRole]}`;
 }
@@ -1244,22 +1272,26 @@ loginRoleBtns.forEach(btn => {
   });
 });
 
-function openSelectedPortal(email) {
+async function openSelectedPortal(email) {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appLayout').classList.remove('hidden');
   document.getElementById('roleBadge').textContent = roleLabels[selectedRole];
   document.getElementById('sidebarTitle').textContent = roleLabels[selectedRole] + " Navigation";
   document.getElementById('accountEmail').value = email;
   document.getElementById('accountRole').value = roleLabels[selectedRole];
-  if (selectedRole === 'patient') loadAuthenticatedPatient(email);
+  if (selectedRole === 'patient') await loadAuthenticatedPatient(email);
   renderSidebar();
 }
 
-function loadAuthenticatedPatient(email) {
+async function loadAuthenticatedPatient(email) {
+  try {
+    const response = await fetch('/doctor-apple/patients/me', {headers: {Authorization: `Bearer ${accessToken}`}});
+    if (response.ok) authenticatedPatient = await response.json();
+  } catch (_) {}
   const questionnaireRecord = [...MOCK_SURVEYS_GENERAL, ...MOCK_SURVEYS_OCCUPATIONAL].find(response =>
     String(response['Email Address'] || '').toLowerCase() === email.toLowerCase()
   );
-  authenticatedPatient = PATIENT_DB.find(patient =>
+  authenticatedPatient = authenticatedPatient || PATIENT_DB.find(patient =>
     String(patient['Email'] || '').toLowerCase() === email.toLowerCase()
   ) || (questionnaireRecord && PATIENT_DB.find(patient =>
     String(patient['NRIC/FIN/Passport Number'] || '').toUpperCase() === String(questionnaireRecord['ID Number'] || '').toUpperCase()
@@ -1294,6 +1326,38 @@ function loadAuthenticatedPatient(email) {
   renderPatientPolicy();
 }
 
+async function renderAppointmentHistory() {
+  const box = document.getElementById('appointmentHistory');
+  box.innerHTML = '<div class="spinner-box"><div class="spinner"></div><span>Loading appointments...</span></div>';
+  try {
+    const response = await fetch('/doctor-apple/appointments', {headers: {Authorization: `Bearer ${accessToken}`}});
+    const appointments = await response.json();
+    if (!response.ok) throw new Error(appointments.detail || 'Unable to load appointments');
+    box.innerHTML = appointments.length ? appointments.map(item => `<div class="article-card">
+      <div class="article-title">${item.form_type === 'occupational' ? 'Occupational Health' : 'General Health'} â€” ${item.package_name || 'Clinic service'}</div>
+      <div class="article-meta">${item.appointment_type === 'walkin' ? 'Walk-in' : `${item.appointment_date || 'Date pending'} ${item.appointment_time || ''}`} Â· ${item.status}</div>
+      <div>${item.insurer || 'Self-pay'} Â· Reference ${item.registration_id}</div>
+    </div>`).join('') : '<p>No past appointments yet.</p>';
+  } catch (error) { box.innerHTML = `<div class="alert-danger">${error.message}</div>`; }
+}
+
+let authMode = 'login';
+function setAuthMode(mode) {
+  authMode = mode;
+  const signup = mode === 'signup';
+  document.getElementById('signupFields').classList.toggle('hidden', !signup);
+  document.getElementById('showLoginBtn').classList.toggle('active', !signup);
+  document.getElementById('showSignupBtn').classList.toggle('active', signup);
+  document.getElementById('loginBtn').textContent = signup ? 'Create Patient Account' : `Log in to ${roleLabels[selectedRole]}`;
+  document.querySelectorAll('.role-btn').forEach(button => button.disabled = signup);
+}
+document.getElementById('showLoginBtn').addEventListener('click', () => setAuthMode('login'));
+document.getElementById('showSignupBtn').addEventListener('click', () => {
+  selectedRole = 'patient';
+  loginRoleBtns.forEach(button => button.classList.toggle('active', button.dataset.role === 'patient'));
+  setAuthMode('signup');
+});
+
 function patientFromDatabase() {
   return {
     name: authenticatedPatient['Full Name'],
@@ -1307,6 +1371,28 @@ function patientFromDatabase() {
     email: authenticatedPatient['Email'],
     visitType: 'general'
   };
+}
+
+function populateDemographicReview() {
+  const pat = patientInputData.prefill || patientFromDatabase();
+  const values = {pName: pat.name, pNric: pat.nric, pDob: pat.dob, pSex: pat.gender,
+    pNationality: authenticatedPatient?.Nationality || '', pEmail: pat.email,
+    pMobile: pat.phone, pAddress: `${pat.address || ''}${pat.postal ? `, ${pat.postal}` : ''}`};
+  Object.entries(values).forEach(([id, value]) => { document.getElementById(id).value = value || ''; });
+}
+
+function resetPatientSession() {
+  authenticatedPatient = null;
+  wizardStep = 1;
+  patientInputData = {visitType:'prebooked', screeningType:'general', date:new Date(Date.now()+86400000).toISOString().split('T')[0], time:'10:00 AM', prefill:null};
+  document.getElementById('patientSuccessBox').style.display = 'none';
+  document.getElementById('prevBtn').style.display = 'inline-flex';
+  document.getElementById('nextBtn').style.display = 'inline-flex';
+  document.getElementById('scanFeedback').classList.add('hidden');
+  document.getElementById('surveyInputs').innerHTML = '';
+  document.getElementById('referralFileInput').value = '';
+  document.getElementById('apptDate').value = patientInputData.date;
+  updateWizardUI();
 }
 
 function renderCoverageOptions() {
@@ -1348,6 +1434,23 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   }
   button.disabled = true;
   try {
+    if (authMode === 'signup') {
+      const required = ['signupName','signupIdentifier','signupSex','signupNationality','signupDob','signupAddress','signupPostal','signupMobile','signupAllergy'];
+      const missing = required.find(id => !document.getElementById(id).value.trim());
+      if (missing) throw new Error('Complete every required patient-registration field.');
+      const signupResponse = await fetch('/doctor-apple/auth/register', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+          full_name: document.getElementById('signupName').value, identifier: document.getElementById('signupIdentifier').value,
+          sex: document.getElementById('signupSex').value, nationality: document.getElementById('signupNationality').value,
+          date_of_birth: document.getElementById('signupDob').value, address: document.getElementById('signupAddress').value,
+          postal_code: document.getElementById('signupPostal').value, contact_home: document.getElementById('signupHome').value,
+          contact_office: document.getElementById('signupOffice').value, contact_mobile: document.getElementById('signupMobile').value,
+          email, drug_allergy: document.getElementById('signupAllergy').value, password
+        })
+      });
+      const signupBody = await signupResponse.json();
+      if (!signupResponse.ok) throw new Error(signupBody.detail || 'Unable to create account');
+    }
     const loginResponse = await fetch('/doctor-apple/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1373,6 +1476,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   document.getElementById('authMessage').textContent = '';
   document.getElementById('appLayout').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
+  resetPatientSession();
 });
 
 updateAuthButton();
@@ -1448,7 +1552,6 @@ document.getElementById('nextBtn').addEventListener('click', () => {
       }
     }
     
-    document.getElementById('sideVisitType').textContent = patientInputData.visitType === "prebooked" ? patientInputData.date + " " + patientInputData.time : "Walk-in Lobby Check-in";
     wizardStep++;
     updateWizardUI();
   } 
@@ -1461,10 +1564,13 @@ document.getElementById('nextBtn').addEventListener('click', () => {
     updateWizardUI();
   } 
   else if (wizardStep === 3) {
+    populateDemographicReview();
     wizardStep++;
     updateWizardUI();
   } 
   else if (wizardStep === 4) {
+    const invalid = [...document.querySelectorAll('#surveyInputs [required]')].find(field => !field.value.trim());
+    if (invalid) { invalid.reportValidity(); invalid.focus(); return; }
     wizardStep++;
     buildReviewStep();
     updateWizardUI();
@@ -1504,9 +1610,8 @@ function selectCoverageOption(badge) {
       document.getElementById('pNric').value = patientInputData.prefill.nric;
       document.getElementById('pInsurer').value = 'Self-pay (no insurance claim)';
       document.getElementById('pPackage').value = 'Standard clinic services';
-      document.getElementById('sideInsurer').textContent = 'Self-pay';
-      document.getElementById('sideAllergy').textContent = patientInputData.prefill.allergy;
       buildSurveyInputs(patientInputData.prefill);
+      populateDemographicReview();
       renderPatientPolicy();
       return;
     }
@@ -1532,11 +1637,8 @@ function selectCoverageOption(badge) {
       document.getElementById('pInsurer').value = pat.insurer;
       document.getElementById('pPackage').value = pat.packageName;
       
-      document.getElementById('sideInsurer').textContent = pat.insurerCode + " (LOG Verified)";
-      document.getElementById('sideAllergy').textContent = pat.allergy;
-      document.getElementById('sideAllergy').style.color = pat.allergy === "None" ? "green" : "red";
-      
       buildSurveyInputs(pat);
+      populateDemographicReview();
     }, 1000);
 }
 
@@ -1569,24 +1671,29 @@ referralFileInput.addEventListener('change', async () => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || 'Unable to process this document');
-    const matchingReferral = Object.values(mockPatients).find(patient =>
-      patient.email.toLowerCase() === authenticatedPatient['Email'].toLowerCase() &&
-      patient.insurerCode === result.insurer_code
-    );
-    if (!matchingReferral || result.requires_manual_review) {
+    if (!result.patient_matched || !result.eligibility || result.requires_manual_review) {
       patientInputData.prefill = null;
-      feedback.textContent = `Document received (${file.name}), but it could not be safely matched to this patient. Clinic staff review is required.`;
+      const reason = result.discrepancies?.join('; ') || 'the extraction confidence was too low';
+      feedback.textContent = `Document received (${file.name}), but it needs clinic staff review because ${reason}.`;
       feedback.className = 'alert-danger';
       return;
     }
+    const eligibility = result.eligibility;
+    const matchingReferral = {
+      ...patientFromDatabase(),
+      insurer: eligibility.insurer || ({BLPHS:'Bluepeak Wellness',BLPDE:'Bluepeak Underwriting',MRDEB:'Meridian Life',EVWME:'Everwell Voucher',EVWPA:'Everwell Underwriting',NSTNBU:'Northstar Underwriting',MOL0199VME:'Ministry of Learning'}[result.insurer_code] || result.insurer_code),
+      insurerCode: result.insurer_code,
+      packageCode: eligibility.package_code,
+      packageName: eligibility.package_name,
+      covered: eligibility.covered_tests
+    };
     patientInputData.prefill = matchingReferral;
     document.getElementById('pName').value = matchingReferral.name;
     document.getElementById('pNric').value = matchingReferral.nric;
     document.getElementById('pInsurer').value = matchingReferral.insurer;
     document.getElementById('pPackage').value = matchingReferral.packageName;
-    document.getElementById('sideInsurer').textContent = `${matchingReferral.insurerCode} (document verified)`;
-    document.getElementById('sideAllergy').textContent = matchingReferral.allergy;
     buildSurveyInputs(matchingReferral);
+    populateDemographicReview();
     renderPatientPolicy();
     feedback.textContent = `Document verified: ${matchingReferral.insurer} is associated with this patient.`;
     feedback.className = 'alert-success';
@@ -1640,12 +1747,12 @@ function buildSurveyInputs(pat) {
     const value = locked ? immutable[field] : (saved?.[field] ?? fallback[field] ?? '');
     const id = `questionnaire-${field.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
     if (!locked && yesNoFields(field)) {
-      return `<div><label class="field-label" for="${id}">${field}</label><select id="${id}" data-question="${escapeHtml(field)}"><option value=""></option><option ${value === 'No' ? 'selected' : ''}>No</option><option ${value === 'Yes' ? 'selected' : ''}>Yes</option></select></div>`;
+      return `<div><label class="field-label" for="${id}">${field} *</label><select id="${id}" data-question="${escapeHtml(field)}" required><option value=""></option><option ${value === 'No' ? 'selected' : ''}>No</option><option ${value === 'Yes' ? 'selected' : ''}>Yes</option></select></div>`;
     }
     const multiline = /Address|Details|Conditions|Complaints|History|Diseases|Medications|Diet|Pain Area/.test(field);
     const control = multiline && !locked
-      ? `<textarea id="${id}" data-question="${escapeHtml(field)}" rows="3">${escapeHtml(value)}</textarea>`
-      : `<input type="text" id="${id}" data-question="${escapeHtml(field)}" value="${escapeHtml(value)}" ${locked ? 'readonly aria-readonly="true"' : ''}>`;
+      ? `<textarea id="${id}" data-question="${escapeHtml(field)}" rows="3" required>${escapeHtml(value)}</textarea>`
+      : `<input type="text" id="${id}" data-question="${escapeHtml(field)}" value="${escapeHtml(value)}" required ${locked ? 'readonly aria-readonly="true"' : ''}>`;
     return `<div><label class="field-label" for="${id}">${field}${locked ? ' (verified — cannot be changed)' : ''}</label>${control}</div>`;
   };
   let html = `${savedNotice}${discrepancyWarning}<div class="alert-success">Fields marked “verified” come from the patient registry and cannot be edited. All other answers can be updated and saved.</div>`;
@@ -1766,21 +1873,10 @@ async function submitRegistration() {
 
 // Start New Pre-registration restart link
 document.getElementById('patientRestartBtn').addEventListener('click', () => {
-  wizardStep = 1;
-  patientInputData.prefill = null;
-  
-  document.getElementById('patientSuccessBox').style.display = 'none';
-  document.getElementById('prevBtn').style.display = 'inline-flex';
-  document.getElementById('nextBtn').style.display = 'inline-flex';
-  document.getElementById('prevBtn').disabled = true;
-  document.getElementById('nextBtn').textContent = "Continue";
-  
-  document.getElementById('scanFeedback').classList.add('hidden');
-  document.getElementById('sideInsurer').textContent = "Awaiting Scan";
-  document.getElementById('sideAllergy').textContent = "None";
-  document.getElementById('sideAllergy').style.color = "var(--success-text)";
-  
-  updateWizardUI();
+  const patient = authenticatedPatient;
+  resetPatientSession();
+  authenticatedPatient = patient;
+  renderCoverageOptions();
 });
 
 // --- B. CLINIC STAFF PORTAL FUNCTIONS ---

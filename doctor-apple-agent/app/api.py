@@ -17,10 +17,17 @@ from app.clinic import (
     match_eligibility,
 )
 from app.config import settings
-from app.database import StoreError, get_store, seed_patients
+from app.database import (
+    DuplicateRecord,
+    StoreError,
+    get_store,
+    prepare_user,
+    seed_patients,
+)
 from app.security import (
     create_token,
     decode_token,
+    hash_password,
     mask_identifier,
     normalize_email,
     normalize_identifier,
@@ -33,6 +40,22 @@ class Credentials(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: Literal["patient", "staff", "tpa"]
+
+
+class PatientSignup(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    identifier: str = Field(min_length=5, max_length=30)
+    sex: Literal["M", "F"]
+    nationality: str = Field(min_length=2, max_length=80)
+    date_of_birth: str = Field(min_length=6, max_length=10)
+    address: str = Field(min_length=5, max_length=250)
+    postal_code: str = Field(min_length=4, max_length=12)
+    contact_home: str = Field(default="", max_length=30)
+    contact_office: str = Field(default="", max_length=30)
+    contact_mobile: str = Field(min_length=6, max_length=30)
+    email: EmailStr
+    drug_allergy: str = Field(min_length=2, max_length=250)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class RegistrationRequest(BaseModel):
@@ -59,6 +82,34 @@ TPA_LIMITS = {
     "NSTNBU": 200.0,
     "EVWME": 300.0,
     "EVWPA": 300.0,
+}
+
+QUESTIONNAIRE_FIELDS = {
+    "general": [
+        "Health Screening Provider", "Health Screening Location", "Name", "ID Type",
+        "ID Number", "Date of Birth", "Email Address", "Country Code", "Phone Number",
+        "Address", "Postal Code", "Ethnicity (Race)", "Gender", "Pregnant (Female only)",
+        "Weeks Pregnant", "Medical History - Conditions", "Prior Surgery Details",
+        "Other Diseases (specify)", "Present Health Complaints", "Current Medications",
+        "Other Medications/Supplements", "Drug Allergies", "Drug Allergy Details",
+        "Family History", "Exercise Frequency", "Smoking Status", "Alcohol Intake Level",
+        "Stress Frequency", "Special Diet", "Chronic Pain", "Pain Area", "Pain Level (1-10)",
+        "Sexual History Shared", "Sexually Active (Past 12 Months)",
+        "No. of Sexual Partners (Past 12 Months)", "Recent Vaccination (Past 1 Month)",
+        "Flu Vaccination This Year", "Menstrual Cycle", "Contraception Use",
+        "Acknowledged Declaration", "Date Signed",
+    ],
+    "occupational": [
+        "Screening Type(s)", "Health Screening Location", "Name", "ID Type", "ID Number",
+        "Date of Birth", "Email Address", "Ethnicity (Race)", "Gender", "Personal - Anaemia",
+        "Personal - Diabetes Mellitus", "Personal - High Blood Pressure",
+        "Personal - High Cholesterol/Lipid Disorder", "Personal - Heart Disease",
+        "Personal - Other Medical/Surgical Conditions", "Personal - Current Medications",
+        "Family - Diabetes Mellitus", "Family - High Cholesterol/Lipid Disorder",
+        "Family - High Blood Pressure", "Family - Heart Diseases", "Family - Other Diseases",
+        "Lifestyle - Currently Smoking", "Lifestyle - Alcohol", "Lifestyle - Exercise",
+        "Acknowledged Declaration", "Consent to Disclose to Employer/Insurer", "Date Signed",
+    ],
 }
 
 
@@ -124,6 +175,99 @@ def login(credentials: Credentials) -> dict[str, str]:
     }
 
 
+@router.post("/auth/register", status_code=201)
+def register_patient(request: PatientSignup) -> dict[str, str]:
+    """Create a patient profile and its linked login as one atomic user flow."""
+    store = get_store()
+    email = normalize_email(request.email)
+    identifier = normalize_identifier(request.identifier)
+    if request.password != settings.patient_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Patient prototype accounts must use the configured patient password",
+        )
+    if store.find_one("users", {"email_normalized": email}):
+        raise HTTPException(status_code=409, detail="An account already uses this email")
+    if store.find_one("patients", {"identifier_normalized": identifier}):
+        raise HTTPException(status_code=409, detail="A patient profile already uses this identifier")
+    patient = {
+        "Full Name": request.full_name.strip(),
+        "NRIC/FIN/Passport Number": request.identifier.strip(),
+        "Sex": request.sex,
+        "Nationality": request.nationality.strip(),
+        "Date of Birth (DD/MM/YY)": request.date_of_birth.strip(),
+        "Address": request.address.strip(),
+        "Postal Code": request.postal_code.strip(),
+        "Contact - Home": request.contact_home.strip(),
+        "Contact - Office": request.contact_office.strip(),
+        "Contact - Mobile": request.contact_mobile.strip(),
+        "Email": str(request.email).strip(),
+        "Drug Allergy": request.drug_allergy.strip(),
+        "questionnaires": {"general": None, "occupational": None},
+        "questionnaire_discrepancies": [],
+        "registration_source": "patient_signup",
+        "created_at": datetime.now(UTC),
+    }
+    try:
+        store.upsert_patient(patient)
+        store.insert(
+            "users",
+            prepare_user(str(request.email), hash_password(request.password), "patient"),
+        )
+    except DuplicateRecord as exc:
+        raise HTTPException(status_code=409, detail="Account already exists") from exc
+    store.insert(
+        "audit_events",
+        {
+            "action": "patient_account_created",
+            "actor": email,
+            "patient": mask_identifier(identifier),
+            "created_at": datetime.now(UTC),
+        },
+    )
+    return {"status": "created", "email": email}
+
+
+@router.get("/patients/me")
+def patient_profile(user: CurrentUser) -> dict[str, Any]:
+    if user.get("role") != "patient":
+        raise HTTPException(status_code=403, detail="Patient role required")
+    patient = get_store().find_one("patients", {"Email": user["sub"]})
+    if not patient:
+        patient = next(
+            (
+                item
+                for item in get_store().find_many("patients", {})
+                if normalize_email(str(item.get("Email", ""))) == user["sub"]
+            ),
+            None,
+        )
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    return {key: value for key, value in patient.items() if key != "identifier_normalized"}
+
+
+@router.get("/appointments")
+def appointment_history(user: CurrentUser) -> list[dict[str, Any]]:
+    query = {} if user.get("role") in {"staff", "tpa"} else {"owner_email": user["sub"]}
+    appointments = get_store().find_many("registrations", query)
+    return [
+        {
+            "registration_id": item.get("_id"),
+            "patient_identifier_masked": item.get("patient_identifier_masked"),
+            "appointment_type": item.get("appointment_type"),
+            "appointment_date": item.get("appointment_date"),
+            "appointment_time": item.get("appointment_time"),
+            "form_type": item.get("form_type"),
+            "package_name": item.get("eligibility", {}).get("package_name"),
+            "insurer": item.get("eligibility", {}).get("insurer"),
+            "status": item.get("status"),
+            "created_at": item.get("created_at"),
+        }
+        for item in appointments
+    ]
+
+
 @router.post("/admin/seed")
 def seed(user: StaffUser) -> dict[str, int]:
     del user
@@ -140,7 +284,6 @@ def seed(user: StaffUser) -> dict[str, int]:
 async def process_document(
     file: Annotated[UploadFile, File()], user: CurrentUser
 ) -> dict[str, Any]:
-    del user
     try:
         content = await file.read()
         filename = Path(file.filename or "upload").name
@@ -156,6 +299,27 @@ async def process_document(
             extraction.discrepancies
         )
         if extraction.identifier:
+            patient = get_store().find_one(
+                "patients",
+                {"identifier_normalized": normalize_identifier(extraction.identifier)},
+            )
+            if not patient:
+                result["requires_manual_review"] = True
+                result["discrepancies"].append("Extracted patient was not found")
+            elif user.get("role") == "patient" and normalize_email(
+                str(patient.get("Email", ""))
+            ) != user["sub"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="The uploaded document does not belong to the signed-in patient",
+                )
+            elif extraction.insurer_code:
+                result["eligibility"] = match_eligibility(
+                    extraction.insurer_code,
+                    str(patient.get("Date of Birth (DD/MM/YY)", "")),
+                    str(patient.get("Sex", "")),
+                )
+                result["patient_matched"] = True
             result["identifier"] = mask_identifier(extraction.identifier)
         return result
     except ValueError as exc:
@@ -210,6 +374,16 @@ def create_registration(
             "Gender": patient.get("Sex", ""),
         }
     )
+    missing_answers = [
+        field
+        for field in QUESTIONNAIRE_FIELDS[request.form_type]
+        if not str(questionnaire_answers.get(field, "")).strip()
+    ]
+    if missing_answers:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Complete all required questionnaire fields: {', '.join(missing_answers)}",
+        )
     document = {
         "owner_email": user["sub"],
         "patient_identifier": normalize_identifier(request.identifier),
@@ -306,14 +480,24 @@ def submit_claim(
     if not registration:
         raise HTTPException(status_code=404, detail="Registration not found")
     if not registration.get("identity_verified_in_person"):
-        raise HTTPException(status_code=409, detail="Physical identity verification is required before claim submission")
+        raise HTTPException(
+            status_code=409,
+            detail="Physical identity verification is required before claim submission",
+        )
     package_code = str(registration.get("eligibility", {}).get("package_code", ""))
-    insurer_code = str(registration.get("eligibility", {}).get("insurer_code") or registration.get("eligibility", {}).get("code") or package_code)
+    insurer_code = str(
+        registration.get("eligibility", {}).get("insurer_code")
+        or registration.get("eligibility", {}).get("code")
+        or package_code
+    )
     if package_code == "SELF_PAY":
         decision = "not_applicable"
         reasons = ["Self-pay visit: no insurance claim is sent to a TPA"]
     else:
-        uncovered = compare_coverage(request.performed_tests, registration.get("eligibility", {}).get("covered_tests", []))["uncovered"]
+        uncovered = compare_coverage(
+            request.performed_tests,
+            registration.get("eligibility", {}).get("covered_tests", []),
+        )["uncovered"]
         limit = TPA_LIMITS.get(insurer_code)
         if registration.get("status") == "manual_review" or uncovered or limit is None:
             decision = "manual_review"
@@ -326,12 +510,48 @@ def submit_claim(
                 reasons.append("No automated payout limit is configured for this policy")
         elif request.total_amount > limit:
             decision = "rejected"
-            reasons = [f"Claim amount ${request.total_amount:.2f} exceeds the ${limit:.2f} policy limit"]
+            reasons = [
+                f"Claim amount ${request.total_amount:.2f} exceeds the ${limit:.2f} policy limit"
+            ]
         else:
             decision = "approved"
-            reasons = ["Identity verified in person", "Policy and package are recognised", "All performed services are covered", f"Claim amount is within the ${limit:.2f} policy limit"]
-    status_by_decision = {"approved": "tpa_auto_approved", "rejected": "tpa_auto_rejected", "manual_review": "pending_manual_tpa_review", "not_applicable": "self_pay_completed"}
+            reasons = [
+                "Identity verified in person",
+                "Policy and package are recognised",
+                "All performed services are covered",
+                f"Claim amount is within the ${limit:.2f} policy limit",
+            ]
+    status_by_decision = {
+        "approved": "tpa_auto_approved",
+        "rejected": "tpa_auto_rejected",
+        "manual_review": "pending_manual_tpa_review",
+        "not_applicable": "self_pay_completed",
+    }
     status_value = status_by_decision[decision]
-    get_store().update_one("registrations", {"_id": registration_id}, {"status": status_value, "claim": {"decision": decision, "reasons": reasons, "total_amount": request.total_amount, "performed_tests": request.performed_tests, "submitted_by": user["sub"], "decided_at": datetime.now(UTC)}})
-    get_store().insert("audit_events", {"action": "tpa_claim_decided", "registration_id": registration_id, "decision": decision, "reasons": reasons, "actor": user["sub"], "created_at": datetime.now(UTC)})
+    get_store().update_one(
+        "registrations",
+        {"_id": registration_id},
+        {
+            "status": status_value,
+            "claim": {
+                "decision": decision,
+                "reasons": reasons,
+                "total_amount": request.total_amount,
+                "performed_tests": request.performed_tests,
+                "submitted_by": user["sub"],
+                "decided_at": datetime.now(UTC),
+            },
+        },
+    )
+    get_store().insert(
+        "audit_events",
+        {
+            "action": "tpa_claim_decided",
+            "registration_id": registration_id,
+            "decision": decision,
+            "reasons": reasons,
+            "actor": user["sub"],
+            "created_at": datetime.now(UTC),
+        },
+    )
     return {"status": status_value, "decision": decision, "reasons": reasons}
