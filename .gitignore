@@ -1,0 +1,13 @@
+**/.env
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.ty/
+**/*.log
+doctor-apple-agent/artifacts/
+doctor-apple-agent/.agents-cli-scripts/
+**/.adk/
+.tmp-adk-samples/
+.publish-doctorapple/
