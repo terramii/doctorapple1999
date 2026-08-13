@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.agnes import ChitExtraction
-from app.api import QUESTIONNAIRE_FIELDS, router
+from app.api import QUESTIONNAIRE_FIELDS, QUESTIONNAIRE_REQUIRED_FIELDS, router
 from app.config import settings
 from app.database import MemoryStore, prepare_user, set_store
 from app.security import hash_password
@@ -81,12 +81,13 @@ def test_patient_cannot_mark_identity_verified() -> None:
     response = client.post(
         "/doctor-apple/registrations/1/staff-verify",
         headers={"Authorization": f"Bearer {token}"},
+        json={"items": [{"service": "Consultation", "billing_code": "CONS", "quantity": 1, "unit_price": 45}]},
     )
     assert response.status_code == 403
 
 
 def complete_general_answers() -> dict[str, str]:
-    return dict.fromkeys(QUESTIONNAIRE_FIELDS["general"], "No")
+    return dict.fromkeys(QUESTIONNAIRE_REQUIRED_FIELDS["general"], "No")
 
 
 def test_patient_signup_creates_linked_profile_and_login() -> None:
@@ -136,6 +137,78 @@ def test_questionnaire_is_required_and_appointments_are_retained() -> None:
         assert response.status_code == 201
     history = client.get("/doctor-apple/appointments", headers=headers)
     assert len(history.json()) == 2
+
+
+def test_optional_questionnaire_fields_can_be_blank_and_answers_persist() -> None:
+    client = client_with_data()
+    token = client.post(
+        "/doctor-apple/auth/login",
+        json={"email": "amir@example.com", "password": settings.patient_password, "role": "patient"},
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    answers = complete_general_answers()
+    answers["Present Health Complaints"] = ""
+    response = client.post(
+        "/doctor-apple/registrations",
+        headers=headers,
+        json={
+            "identifier": "S8536477Z", "insurer_code": "SELF_PAY",
+            "questionnaire_answers": answers,
+        },
+    )
+    assert response.status_code == 201
+    profile = client.get("/doctor-apple/patients/me", headers=headers).json()
+    assert profile["questionnaires"]["general"]["Health Screening Provider"] == "No"
+
+
+def test_billing_is_determined_before_queue_and_dispensing_precedes_payment() -> None:
+    client = client_with_data()
+    patient_token = client.post(
+        "/doctor-apple/auth/login",
+        json={"email": "amir@example.com", "password": settings.patient_password, "role": "patient"},
+    ).json()["access_token"]
+    created = client.post(
+        "/doctor-apple/registrations",
+        headers={"Authorization": f"Bearer {patient_token}"},
+        json={
+            "identifier": "S8536477Z", "insurer_code": "BLPHS",
+            "questionnaire_answers": complete_general_answers(),
+        },
+    ).json()
+    registration_id = created["registration_id"]
+    staff_token = client.post(
+        "/doctor-apple/auth/login",
+        json={"email": "staff@example.com", "password": settings.staff_password, "role": "staff"},
+    ).json()["access_token"]
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    payment = {"payment_method": "Card"}
+    assert client.post(
+        f"/doctor-apple/registrations/{registration_id}/submit-claim",
+        headers=staff_headers, json=payment,
+    ).status_code == 409
+    assert client.post(
+        f"/doctor-apple/registrations/{registration_id}/staff-verify", headers=staff_headers,
+        json={"items": [{"service": "Full Blood Count", "billing_code": "FBC", "quantity": 1, "unit_price": 100}]},
+    ).status_code == 200
+    assert client.post(
+        f"/doctor-apple/registrations/{registration_id}/submit-claim",
+        headers=staff_headers, json=payment,
+    ).status_code == 409
+    completed = client.post(
+        f"/doctor-apple/registrations/{registration_id}/complete-visit",
+        headers=staff_headers, json={
+            "clinical_conclusion": "Consultation completed; patient stable.",
+            "medications": [{"service": "Paracetamol", "billing_code": "MED-PARA", "quantity": 2, "unit_price": 5}],
+        },
+    )
+    assert completed.status_code == 200
+    claimed = client.post(
+        f"/doctor-apple/registrations/{registration_id}/submit-claim",
+        headers=staff_headers, json=payment,
+    )
+    assert claimed.status_code == 200
+    assert claimed.json()["status"] == "pending_manual_tpa_review"
+    assert "Paracetamol" in claimed.json()["reasons"][0]
 
 
 def test_uploaded_chit_is_matched_to_authenticated_patient(monkeypatch) -> None:

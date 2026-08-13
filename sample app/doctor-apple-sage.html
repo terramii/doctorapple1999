@@ -200,11 +200,11 @@
     position: relative; padding: 0 10px;
   }
   .step-bar::before {
-    content: ''; position: absolute; top: 15px; left: 0; right: 0;
+    content: ''; position: absolute; top: 15px; left: 9%; right: 9%;
     height: 4px; background: rgba(59, 82, 68, 0.08); z-index: 1; border-radius: 2px;
   }
   .step-progress {
-    position: absolute; top: 15px; left: 0; width: 0%;
+    position: absolute; top: 15px; left: 9%; width: 0%;
     height: 4px; background: var(--sage-mid); z-index: 1; transition: width 0.3s ease; border-radius: 2px;
   }
   .step-item {
@@ -1308,11 +1308,12 @@ async function loadAuthenticatedPatient(email) {
   }) || null;
   if (!authenticatedPatient) return;
   const identifier = String(authenticatedPatient['NRIC/FIN/Passport Number'] || '').toUpperCase();
+  const persistedQuestionnaires = authenticatedPatient.questionnaires || {};
   authenticatedPatient.questionnaires = {
-    general: MOCK_SURVEYS_GENERAL.find(response => String(response['ID Number'] || '').toUpperCase() === identifier) || null,
-    occupational: MOCK_SURVEYS_OCCUPATIONAL.find(response => String(response['ID Number'] || '').toUpperCase() === identifier) || null
+    general: persistedQuestionnaires.general || MOCK_SURVEYS_GENERAL.find(response => String(response['ID Number'] || '').toUpperCase() === identifier) || null,
+    occupational: persistedQuestionnaires.occupational || MOCK_SURVEYS_OCCUPATIONAL.find(response => String(response['ID Number'] || '').toUpperCase() === identifier) || null
   };
-  authenticatedPatient.questionnaireDiscrepancies = Object.entries(authenticatedPatient.questionnaires)
+  authenticatedPatient.questionnaireDiscrepancies = authenticatedPatient.questionnaire_discrepancies || Object.entries(authenticatedPatient.questionnaires)
     .filter(([, response]) => response && String(response['Email Address'] || '').toLowerCase() !== email.toLowerCase())
     .map(([type]) => `${type} questionnaire email differs from registration email`);
   document.getElementById('profileName').value = authenticatedPatient['Full Name'] || '';
@@ -1486,7 +1487,7 @@ const steps = document.querySelectorAll('.step-item');
 const wizardCards = document.querySelectorAll('.wizard-step');
 
 function updateWizardUI() {
-  const progressPercent = ((wizardStep - 1) / (steps.length - 1)) * 100;
+  const progressPercent = ((wizardStep - 1) / (steps.length - 1)) * 82;
   document.getElementById('wizardProgress').style.width = progressPercent + "%";
   
   steps.forEach((step, idx) => {
@@ -1739,20 +1740,28 @@ function buildSurveyInputs(pat) {
     'Acknowledgement': ['Acknowledged Declaration','Consent to Disclose to Employer/Insurer','Date Signed']
   };
   const sections = formType === 'occupational' ? occupationalSections : generalSections;
-  const fallback = {'Email Address': pat.email, 'Phone Number': pat.phone, 'Address': pat.address, 'Postal Code': pat.postal};
+  const requiredByForm = {
+    general: new Set(['Health Screening Provider','Health Screening Location','Name','ID Type','ID Number','Date of Birth','Email Address','Country Code','Phone Number','Address','Postal Code','Ethnicity (Race)','Gender','Acknowledged Declaration']),
+    occupational: new Set(['Screening Type(s)','Health Screening Location','Name','ID Type','ID Number','Date of Birth','Email Address','Ethnicity (Race)','Gender','Personal - Anaemia','Personal - Diabetes Mellitus','Personal - High Blood Pressure','Personal - High Cholesterol/Lipid Disorder','Personal - Heart Disease','Personal - Other Medical/Surgical Conditions','Personal - Current Medications','Family - Diabetes Mellitus','Family - High Cholesterol/Lipid Disorder','Family - High Blood Pressure','Family - Heart Diseases','Family - Other Diseases','Lifestyle - Currently Smoking','Lifestyle - Alcohol','Lifestyle - Exercise','Acknowledged Declaration','Consent to Disclose to Employer/Insurer'])
+  };
+  const requiredFields = requiredByForm[formType];
+  const fallback = {'ID Type': /^[STFGM]\w{7}[A-Z]$/i.test(pat.nric || '') ? 'NRIC/FIN' : 'Passport', 'Email Address': pat.email, 'Phone Number': pat.phone, 'Address': pat.address, 'Postal Code': pat.postal, 'Country Code': '+65'};
   const escapeHtml = value => String(value ?? '').replace(/[&<>"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
   const yesNoFields = field => /^(Personal|Family|Lifestyle) -|Pregnant|Acknowledged|Consent|Vaccination|Chronic Pain|Sexual History|Sexually Active|Drug Allergies/.test(field);
   const renderField = field => {
     const locked = Object.prototype.hasOwnProperty.call(immutable, field);
+    const required = requiredFields.has(field);
+    const requiredAttribute = required ? ' required' : '';
+    const requiredMarker = required ? ' *' : ' (optional)';
     const value = locked ? immutable[field] : (saved?.[field] ?? fallback[field] ?? '');
     const id = `questionnaire-${field.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
     if (!locked && yesNoFields(field)) {
-      return `<div><label class="field-label" for="${id}">${field} *</label><select id="${id}" data-question="${escapeHtml(field)}" required><option value=""></option><option ${value === 'No' ? 'selected' : ''}>No</option><option ${value === 'Yes' ? 'selected' : ''}>Yes</option></select></div>`;
+      return `<div><label class="field-label" for="${id}">${field}${requiredMarker}</label><select id="${id}" data-question="${escapeHtml(field)}"${requiredAttribute}><option value=""></option><option ${value === 'No' ? 'selected' : ''}>No</option><option ${value === 'Yes' ? 'selected' : ''}>Yes</option></select></div>`;
     }
     const multiline = /Address|Details|Conditions|Complaints|History|Diseases|Medications|Diet|Pain Area/.test(field);
     const control = multiline && !locked
-      ? `<textarea id="${id}" data-question="${escapeHtml(field)}" rows="3" required>${escapeHtml(value)}</textarea>`
-      : `<input type="text" id="${id}" data-question="${escapeHtml(field)}" value="${escapeHtml(value)}" required ${locked ? 'readonly aria-readonly="true"' : ''}>`;
+      ? `<textarea id="${id}" data-question="${escapeHtml(field)}" rows="3"${requiredAttribute}>${escapeHtml(value)}</textarea>`
+      : `<input type="text" id="${id}" data-question="${escapeHtml(field)}" value="${escapeHtml(value)}"${requiredAttribute} ${locked ? 'readonly aria-readonly="true"' : ''}>`;
     return `<div><label class="field-label" for="${id}">${field}${locked ? ' (verified — cannot be changed)' : ''}</label>${control}</div>`;
   };
   let html = `${savedNotice}${discrepancyWarning}<div class="alert-success">Fields marked “verified” come from the patient registry and cannot be edited. All other answers can be updated and saved.</div>`;
@@ -1845,9 +1854,8 @@ async function submitRegistration() {
       visitType: patientInputData.screeningType,
       prefill: pat,
       log: ["LOG Checked", "Digital Intake submission completed"],
-      bill: pat.insurerCode === 'SELF_PAY'
-        ? { total: 45.00, covered: 0.00, copay: 45.00 }
-        : { total: patientInputData.screeningType === "occupational" ? 180.00 : 250.00, covered: patientInputData.screeningType === "occupational" ? 180.00 : 250.00, copay: 0.00 },
+      bill: { total: 0, covered: 0, copay: 0 },
+      billingEntered: false,
       insurerCode: pat.insurerCode,
       packageName: pat.packageName,
       date: apptDateStr,
@@ -1948,18 +1956,28 @@ function renderQueue() {
               <input type="checkbox" id="verifyCheck-${idx}">
               I confirm the physical NRIC matches the pre-registered details.
             </label>
+            <div class="card" style="padding:14px; margin-top:12px;">
+              <b>Step 7 â€” Billing determination</b>
+              <p style="font-size:.82rem;">Select the expected Parkway Shenton services, quantities, and prices before issuing the queue number.</p>
+              ${[0,1,2].map((row) => `<div class="field-grid" style="margin-bottom:8px;">
+                <input id="service-${idx}-${row}" placeholder="Service ${row + 1}${row ? ' (optional)' : ''}" ${row ? '' : 'required'}>
+                <input id="billingCode-${idx}-${row}" placeholder="Billing code" ${row ? '' : 'required'}>
+                <input id="quantity-${idx}-${row}" type="number" min="1" max="100" value="1" aria-label="Quantity">
+                <input id="unitPrice-${idx}-${row}" type="number" min="0" max="100000" step="0.01" placeholder="Unit price (SGD)" ${row ? '' : 'required'}>
+              </div>`).join('')}
+            </div>
           ` : ''}
         </div>
         
         <div class="c2">
           <div class="benefit-box">
-            <b>Covered Benefits (AI Pre-Verified)</b><br>
-            <span style="font-size:0.82rem; color:#556B2F;">Standard test battery fully covered under Policy. LOG matches clinical procedure codes.</span>
+            <b>Pre-verified policy benefits</b><br>
+            <span style="font-size:0.82rem; color:#556B2F;">Staff determines expected services and uncovered cost before queueing. Medication is added automatically to the final payment after the visit.</span>
             <hr>
             <table style="width:100%; font-size:0.85rem;">
-              <tr><td>Total Billing:</td><td style="text-align:right;">$${pat.bill.total.toFixed(2)}</td></tr>
-              <tr><td>Claimable:</td><td style="text-align:right; color:green; font-weight:bold;">$${pat.bill.covered.toFixed(2)}</td></tr>
-              <tr><td>Patient Pay:</td><td style="text-align:right; font-weight:bold;">$${pat.bill.copay.toFixed(2)}</td></tr>
+              <tr><td>Estimated services:</td><td style="text-align:right;">${pat.billingDetermined ? `$${pat.bill.total.toFixed(2)}` : 'Pending step 7'}</td></tr>
+              <tr><td>Estimated uncovered:</td><td style="text-align:right; font-weight:bold;">${pat.billingDetermined ? `$${pat.bill.copay.toFixed(2)}` : 'Pending step 7'}</td></tr>
+              <tr><td>Final payment:</td><td style="text-align:right; font-weight:bold;">${pat.billingEntered ? `$${pat.bill.total.toFixed(2)}` : 'After visit/dispensing'}</td></tr>
             </table>
           </div>
           
@@ -1969,7 +1987,24 @@ function renderQueue() {
             ` : ''}
             
             ${pat.status === "Consulting" ? `
-              <button class="btn btn-blue" id="claimBtn-${idx}" style="width:100%;">Consultation Done: Submit TPA Claim</button>
+              <div class="card" style="padding:14px; margin:0;">
+                <b>Complete clinic visit</b>
+                <label class="field-label" for="clinicalConclusion-${idx}">Clinical conclusion / outcome</label>
+                <textarea id="clinicalConclusion-${idx}" rows="4" placeholder="Record the visit conclusion for the patient" required></textarea>
+                <b style="display:block;margin-top:10px;">Step 11 â€” Medication dispensing</b>
+                <div class="allergy-alert">${pat.allergy === 'None' ? 'No recorded drug allergy.' : `Registry allergy automatically surfaced: ${pat.allergy}`}</div>
+                ${[0,1].map((row) => `<div class="field-grid" style="margin-bottom:8px;">
+                  <input id="medication-${idx}-${row}" placeholder="Medication ${row + 1} (optional)">
+                  <input id="medCode-${idx}-${row}" placeholder="Dispensing code">
+                  <input id="medQuantity-${idx}-${row}" type="number" min="1" max="100" value="1" aria-label="Quantity">
+                  <input id="medPrice-${idx}-${row}" type="number" min="0" max="100000" step="0.01" placeholder="Unit price (SGD)">
+                </div>`).join('')}
+              </div>
+              <button class="btn" id="completeVisitBtn-${idx}" style="width:100%;">Mark visit completed</button>
+            ` : ''}
+
+            ${pat.status === "Ready for Payment" ? `
+              <button class="btn btn-blue" id="claimBtn-${idx}" style="width:100%;">Step 12 â€” Calculate payment${pat.insurerCode === 'SELF_PAY' ? '' : ' &amp; submit to TPA'}</button>
             ` : ''}
             
             <div style="display:flex; gap:6px;">
@@ -1990,6 +2025,7 @@ function renderQueue() {
     // Wire Admissions buttons
     const cb = document.getElementById(`verifyCheck-${idx}`);
     const admitBtn = document.getElementById(`admitBtn-${idx}`);
+    const completeVisitBtn = document.getElementById(`completeVisitBtn-${idx}`);
     const claimBtn = document.getElementById(`claimBtn-${idx}`);
     const editBtn = document.getElementById(`editAdmissionBtn-${idx}`);
     const deleteBtn = document.getElementById(`deleteAdmissionBtn-${idx}`);
@@ -2002,13 +2038,27 @@ function renderQueue() {
     
     if (admitBtn) {
       admitBtn.addEventListener('click', async () => {
+        const items = [0,1,2].map(row => ({
+          service: document.getElementById(`service-${idx}-${row}`).value.trim(),
+          billing_code: document.getElementById(`billingCode-${idx}-${row}`).value.trim(),
+          quantity: Number(document.getElementById(`quantity-${idx}-${row}`).value),
+          unit_price: Number(document.getElementById(`unitPrice-${idx}-${row}`).value)
+        })).filter(item => item.service);
+        if (!items.length || items.some(item => !item.billing_code || !Number.isInteger(item.quantity) || item.quantity < 1 || !Number.isFinite(item.unit_price) || item.unit_price < 0)) {
+          return alert('Enter at least one service with its billing code, quantity, and unit price.');
+        }
         const response = await fetch(`/doctor-apple/registrations/${pat.id}/staff-verify`, {
-          method: 'POST', headers: {Authorization: `Bearer ${accessToken}`}
+          method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`},
+          body: JSON.stringify({items})
         });
         const result = await response.json();
         if (!response.ok) return alert(result.detail || 'Unable to verify patient');
         pat.status = "Consulting";
         pat.identityVerified = true;
+        pat.billingDetermined = true;
+        pat.billingItems = items;
+        pat.bill.total = result.estimated_total;
+        pat.bill.copay = result.estimated_uncovered;
         pat.log.push("Physical ID verified at reception");
         pat.log.push("Power Automate RPA synchronised patient database to Clinic Assist");
         renderQueue();
@@ -2017,13 +2067,17 @@ function renderQueue() {
     
     if (claimBtn) {
       claimBtn.addEventListener('click', async () => {
+        claimBtn.disabled = true;
         const response = await fetch(`/doctor-apple/registrations/${pat.id}/submit-claim`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`},
-          body: JSON.stringify({total_amount: pat.bill.total, performed_tests: pat.prefill?.covered || []})
+          body: JSON.stringify({payment_method: 'Card'})
         });
         const result = await response.json();
-        if (!response.ok) return alert(result.detail || 'Unable to submit claim');
+        if (!response.ok) {
+          claimBtn.disabled = false;
+          return alert(result.detail || 'Unable to process billing');
+        }
         const labels = {
           tpa_auto_approved: 'TPA Auto-approved',
           tpa_auto_rejected: 'TPA Auto-rejected',
@@ -2033,8 +2087,45 @@ function renderQueue() {
         pat.status = labels[result.status] || result.status;
         pat.tpaDecision = result.decision;
         pat.tpaReasons = result.reasons;
+        pat.billingEntered = true;
+        pat.bill.covered = result.decision === 'approved' ? pat.bill.total : 0;
+        pat.bill.copay = pat.bill.total - pat.bill.covered;
         pat.log.push(`TPA decision: ${pat.status}`);
         result.reasons.forEach(reason => pat.log.push(`TPA reason: ${reason}`));
+        renderQueue();
+      });
+    }
+
+    if (completeVisitBtn) {
+      completeVisitBtn.addEventListener('click', async () => {
+        const clinicalConclusion = document.getElementById(`clinicalConclusion-${idx}`).value.trim();
+        if (!clinicalConclusion) return alert('Record the clinical conclusion before completing the visit.');
+        const medications = [0,1].map(row => ({
+          service: document.getElementById(`medication-${idx}-${row}`).value.trim(),
+          billing_code: document.getElementById(`medCode-${idx}-${row}`).value.trim(),
+          quantity: Number(document.getElementById(`medQuantity-${idx}-${row}`).value),
+          unit_price: Number(document.getElementById(`medPrice-${idx}-${row}`).value)
+        })).filter(item => item.service);
+        if (medications.some(item => !item.billing_code || !Number.isInteger(item.quantity) || item.quantity < 1 || !Number.isFinite(item.unit_price) || item.unit_price < 0)) {
+          return alert('Each dispensed medication needs a code, quantity, and unit price.');
+        }
+        completeVisitBtn.disabled = true;
+        const response = await fetch(`/doctor-apple/registrations/${pat.id}/complete-visit`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`},
+          body: JSON.stringify({clinical_conclusion: clinicalConclusion, medications})
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          completeVisitBtn.disabled = false;
+          return alert(result.detail || 'Unable to complete clinic visit');
+        }
+        pat.status = 'Ready for Payment';
+        pat.clinicalConclusion = clinicalConclusion;
+        pat.dispensedMedications = medications;
+        pat.bill.total += medications.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+        pat.log.push(`Clinic visit completed: ${clinicalConclusion}`);
+        pat.log.push(result.allergy_check);
         renderQueue();
       });
     }

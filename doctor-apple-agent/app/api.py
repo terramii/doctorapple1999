@@ -69,9 +69,24 @@ class RegistrationRequest(BaseModel):
     questionnaire_answers: dict[str, Any] = Field(default_factory=dict)
 
 
+class BillableItem(BaseModel):
+    service: str = Field(min_length=1, max_length=160)
+    billing_code: str = Field(min_length=1, max_length=80)
+    quantity: int = Field(ge=1, le=100)
+    unit_price: float = Field(ge=0, le=100_000)
+
+
+class BillingDeterminationRequest(BaseModel):
+    items: list[BillableItem] = Field(min_length=1)
+
+
+class VisitCompletionRequest(BaseModel):
+    clinical_conclusion: str = Field(min_length=2, max_length=2_000)
+    medications: list[BillableItem] = Field(default_factory=list)
+
+
 class ClaimRequest(BaseModel):
-    total_amount: float = Field(gt=0, le=100_000)
-    performed_tests: list[str] = Field(default_factory=list)
+    payment_method: str = Field(default="Card", min_length=2, max_length=40)
 
 
 TPA_LIMITS = {
@@ -112,16 +127,40 @@ QUESTIONNAIRE_FIELDS = {
     ],
 }
 
+# Only fields marked required in the source questionnaires block submission.
+# Optional and conditional questions may legitimately be blank.
+QUESTIONNAIRE_REQUIRED_FIELDS = {
+    "general": [
+        "Health Screening Provider", "Health Screening Location", "Name", "ID Type",
+        "ID Number", "Date of Birth", "Email Address", "Country Code", "Phone Number",
+        "Address", "Postal Code", "Ethnicity (Race)", "Gender",
+        "Acknowledged Declaration",
+    ],
+    "occupational": [
+        "Screening Type(s)", "Health Screening Location", "Name", "ID Type", "ID Number",
+        "Date of Birth", "Email Address", "Ethnicity (Race)", "Gender",
+        "Personal - Anaemia", "Personal - Diabetes Mellitus", "Personal - High Blood Pressure",
+        "Personal - High Cholesterol/Lipid Disorder", "Personal - Heart Disease",
+        "Personal - Other Medical/Surgical Conditions", "Personal - Current Medications",
+        "Family - Diabetes Mellitus", "Family - High Cholesterol/Lipid Disorder",
+        "Family - High Blood Pressure", "Family - Heart Diseases", "Family - Other Diseases",
+        "Lifestyle - Currently Smoking", "Lifestyle - Alcohol", "Lifestyle - Exercise",
+        "Acknowledged Declaration", "Consent to Disclose to Employer/Insurer",
+    ],
+}
+
 
 def current_user(
     authorization: Annotated[str | None, Header()] = None,
+    x_doctor_apple_token: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
-    if not authorization or not authorization.startswith("Bearer "):
+    token = x_doctor_apple_token
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ")
+    if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        return decode_token(
-            authorization.removeprefix("Bearer "), settings.token_secret
-        )
+        return decode_token(token.removeprefix("Bearer "), settings.token_secret)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
@@ -262,6 +301,8 @@ def appointment_history(user: CurrentUser) -> list[dict[str, Any]]:
             "package_name": item.get("eligibility", {}).get("package_name"),
             "insurer": item.get("eligibility", {}).get("insurer"),
             "status": item.get("status"),
+            "clinical_conclusion": item.get("visit", {}).get("clinical_conclusion"),
+            "claim": item.get("claim"),
             "created_at": item.get("created_at"),
         }
         for item in appointments
@@ -376,7 +417,7 @@ def create_registration(
     )
     missing_answers = [
         field
-        for field in QUESTIONNAIRE_FIELDS[request.form_type]
+        for field in QUESTIONNAIRE_REQUIRED_FIELDS[request.form_type]
         if not str(questionnaire_answers.get(field, "")).strip()
     ]
     if missing_answers:
@@ -401,6 +442,7 @@ def create_registration(
         else None,
         "status": "manual_review" if review else "pending_identity_verification",
         "identity_verified_in_person": False,
+        "insurance_verified": request.insurer_code == "SELF_PAY" or not review,
         "created_at": datetime.now(UTC),
     }
     registration_id = get_store().insert("registrations", document)
@@ -445,13 +487,33 @@ def create_registration(
 
 
 @router.post("/registrations/{registration_id}/staff-verify")
-def staff_verify(registration_id: str, user: StaffUser) -> dict[str, str]:
+def staff_verify(
+    registration_id: str, request: BillingDeterminationRequest, user: StaffUser
+) -> dict[str, Any]:
+    registration = get_store().find_one("registrations", {"_id": registration_id})
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    items = [item.model_dump() for item in request.items]
+    total = round(sum(item["quantity"] * item["unit_price"] for item in items), 2)
+    covered_names = registration.get("eligibility", {}).get("covered_tests", [])
+    uncovered = [] if registration.get("eligibility", {}).get("package_code") == "SELF_PAY" else compare_coverage(
+        [item["service"] for item in items], covered_names
+    )["uncovered"]
+    uncovered_total = round(sum(
+        item["quantity"] * item["unit_price"] for item in items if item["service"] in uncovered
+    ), 2)
     updated = get_store().update_one(
         "registrations",
         {"_id": registration_id},
         {
             "identity_verified_in_person": True,
+            "insurance_verified": True,
             "status": "approved",
+            "billing_determination": {
+                "items": items, "estimated_total": total,
+                "estimated_uncovered": total if registration.get("eligibility", {}).get("package_code") == "SELF_PAY" else uncovered_total,
+                "determined_by": user["sub"], "determined_at": datetime.now(UTC),
+            },
             "verified_by": user["sub"],
             "verified_at": datetime.now(UTC),
         },
@@ -469,7 +531,55 @@ def staff_verify(registration_id: str, user: StaffUser) -> dict[str, str]:
             "created_at": datetime.now(UTC),
         },
     )
-    return {"status": "approved"}
+    return {"status": "approved", "estimated_total": total, "estimated_uncovered": uncovered_total}
+
+
+@router.post("/registrations/{registration_id}/complete-visit")
+def complete_visit(
+    registration_id: str, request: VisitCompletionRequest, user: StaffUser
+) -> dict[str, str]:
+    registration = get_store().find_one("registrations", {"_id": registration_id})
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    if not registration.get("identity_verified_in_person"):
+        raise HTTPException(
+            status_code=409,
+            detail="Physical identity verification is required before completing the visit",
+        )
+    if registration.get("status") != "approved" or not registration.get("billing_determination"):
+        raise HTTPException(status_code=409, detail="Visit is not ready to be completed")
+    allergy = str(registration.get("allergy_warning") or "")
+    medications = [item.model_dump() for item in request.medications]
+    if allergy and medications:
+        # Surface the registry allergy at dispensing so the pharmacist does not re-key it.
+        allergy_check = f"Checked against patient registry: {allergy}"
+    else:
+        allergy_check = "No recorded drug allergy" if medications else "No medication dispensed"
+    completed_at = datetime.now(UTC)
+    get_store().update_one(
+        "registrations",
+        {"_id": registration_id},
+        {
+            "status": "ready_for_payment",
+            "visit": {
+                "clinical_conclusion": request.clinical_conclusion.strip(),
+                "dispensed_medications": medications,
+                "allergy_check": allergy_check,
+                "completed_by": user["sub"],
+                "completed_at": completed_at,
+            },
+        },
+    )
+    get_store().insert(
+        "audit_events",
+        {
+            "action": "clinic_visit_completed",
+            "registration_id": registration_id,
+            "actor": user["sub"],
+            "created_at": completed_at,
+        },
+    )
+    return {"status": "ready_for_payment", "allergy_check": allergy_check}
 
 
 @router.post("/registrations/{registration_id}/submit-claim")
@@ -484,6 +594,17 @@ def submit_claim(
             status_code=409,
             detail="Physical identity verification is required before claim submission",
         )
+    if registration.get("status") != "ready_for_payment":
+        raise HTTPException(
+            status_code=409,
+            detail="The visit and medication-dispensing step must be completed before payment",
+        )
+    billing = registration.get("billing_determination", {})
+    service_items = billing.get("items", [])
+    medication_items = registration.get("visit", {}).get("dispensed_medications", [])
+    all_items = [*service_items, *medication_items]
+    total_amount = round(sum(item["quantity"] * item["unit_price"] for item in all_items), 2)
+    performed_tests = [item["service"] for item in all_items]
     package_code = str(registration.get("eligibility", {}).get("package_code", ""))
     insurer_code = str(
         registration.get("eligibility", {}).get("insurer_code")
@@ -494,8 +615,13 @@ def submit_claim(
         decision = "not_applicable"
         reasons = ["Self-pay visit: no insurance claim is sent to a TPA"]
     else:
+        if not registration.get("insurance_verified"):
+            raise HTTPException(
+                status_code=409,
+                detail="Insurance eligibility must be verified before TPA submission",
+            )
         uncovered = compare_coverage(
-            request.performed_tests,
+            performed_tests,
             registration.get("eligibility", {}).get("covered_tests", []),
         )["uncovered"]
         limit = TPA_LIMITS.get(insurer_code)
@@ -508,10 +634,10 @@ def submit_claim(
                 reasons.append(f"Uncovered services: {', '.join(uncovered)}")
             if limit is None:
                 reasons.append("No automated payout limit is configured for this policy")
-        elif request.total_amount > limit:
+        elif total_amount > limit:
             decision = "rejected"
             reasons = [
-                f"Claim amount ${request.total_amount:.2f} exceeds the ${limit:.2f} policy limit"
+                f"Claim amount ${total_amount:.2f} exceeds the ${limit:.2f} policy limit"
             ]
         else:
             decision = "approved"
@@ -536,8 +662,10 @@ def submit_claim(
             "claim": {
                 "decision": decision,
                 "reasons": reasons,
-                "total_amount": request.total_amount,
-                "performed_tests": request.performed_tests,
+                "billing_codes": [item["billing_code"] for item in all_items],
+                "total_amount": total_amount,
+                "performed_tests": performed_tests,
+                "payment_method": request.payment_method,
                 "submitted_by": user["sub"],
                 "decided_at": datetime.now(UTC),
             },
